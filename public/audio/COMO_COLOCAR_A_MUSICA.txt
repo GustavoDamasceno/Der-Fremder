@@ -1,0 +1,9 @@
+﻿Coloque aqui o arquivo da musica de fundo com o nome:
+
+  bgm.mp3
+
+Nao da para baixar automaticamente do YouTube (direitos autorais).
+Exporte o audio do video que quiser e salve como bgm.mp3 nesta pasta.
+Depois reinicie o jogo (npm run dev).
+
+Mute: botao no canto ou tecla M.
