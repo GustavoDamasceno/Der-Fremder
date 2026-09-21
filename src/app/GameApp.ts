@@ -15,6 +15,7 @@ import { UiController } from '../ui/UiController';
 import { Footsteps } from '../audio/Footsteps';
 import { SoundManager } from '../audio/SoundManager';
 import { GamepadInput, GP } from '../input/GamepadInput';
+import { TouchControls } from '../input/TouchControls';
 import * as THREE from 'three';
 
 export class GameApp {
@@ -26,6 +27,7 @@ export class GameApp {
   private walkPhase = { value: 0 };
   private footsteps = new Footsteps();
   private gamepad = new GamepadInput();
+  private touch = new TouchControls();
   private last = performance.now();
   private eHeld = false;
   private interactBlocked = false;
@@ -43,19 +45,21 @@ export class GameApp {
     this.world = new ShtetlWorld();
     this.player = new FixedCameraPlayer(canvas);
     this.player.setGamepad(this.gamepad);
+    this.player.setTouch(this.touch);
 
     // Personagem 3D do jogador
     this.playerRig = makePerson('player');
     this.world.scene.add(this.playerRig.root);
 
     this.ui = new UiController(uiRoot, {
-      onStartGame: () => this.startNewGame(),
+      onStartGame: (opts) => this.startNewGame(opts),
       onBannerClosed: () => this.afterBanner(),
       onChapterContinue: () => this.advanceChapter(),
       onDialogueFinished: () => this.afterDialogue(),
       onRequestTitle: () => this.toTitle(),
       onSecretDialogue: () => this.ui.startSecretDialogue(),
     });
+    this.ui.setTouch(this.touch);
 
     window.addEventListener('resize', () => this.onResize());
     requestAnimationFrame((t) => this.frame(t));
@@ -66,7 +70,8 @@ export class GameApp {
     this.player.resize();
   }
 
-  private startNewGame(): void {
+  private startNewGame(opts?: { mobile?: boolean }): void {
+    this.touch.setEnabled(!!opts?.mobile);
     this.footsteps.unlock();
     SoundManager.get().unlock();
     SoundManager.get().setTrack('shtetl');
@@ -97,6 +102,8 @@ export class GameApp {
 
   private toTitle(): void {
     this.playing = false;
+    this.touch.setEnabled(false);
+    this.touch.setGameplayVisible(false);
     GameState.reset();
     this.ui.showTitle();
   }
@@ -202,6 +209,7 @@ export class GameApp {
 
     this.gamepad.update();
     this.ui.pollGamepad(this.gamepad);
+    this.ui.pollTouch();
     this.ui.setGamepadStatus(this.gamepad.isConnected, this.gamepad.displayName);
 
     const canMove =
@@ -223,7 +231,9 @@ export class GameApp {
     this.footsteps.update(this.walkPhase.value, moving);
 
     const eDown =
-      this.player.justPressed('KeyE') || this.gamepad.isDown(GP.A);
+      this.player.justPressed('KeyE') ||
+      this.gamepad.isDown(GP.A) ||
+      this.touch.isInteractDown();
     if (!eDown) this.interactBlocked = false;
     if (canMove && eDown && !this.eHeld && !this.interactBlocked) {
       this.tryInteract();

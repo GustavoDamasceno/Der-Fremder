@@ -7,6 +7,7 @@ import {
   chapterCompleteCopy,
 } from '../content/chapterFlow';
 import { GP, type GamepadInput } from '../input/GamepadInput';
+import type { TouchControls } from '../input/TouchControls';
 import { SoundManager } from '../audio/SoundManager';
 
 const ENDINGS: Record<
@@ -51,7 +52,7 @@ export type UiMode =
   | 'secretEnd';
 
 type Handlers = {
-  onStartGame: () => void;
+  onStartGame: (opts?: { mobile?: boolean }) => void;
   onBannerClosed: () => void;
   onChapterContinue: () => void;
   onDialogueFinished: () => void;
@@ -82,6 +83,7 @@ export class UiController {
   private glossaryEl!: HTMLElement;
   private lockHintEl!: HTMLElement;
   private crosshairEl!: HTMLElement;
+  private touch: TouchControls | null = null;
 
   constructor(root: HTMLElement, handlers: Handlers) {
     this.root = root;
@@ -89,6 +91,11 @@ export class UiController {
     this.build();
     this.bindKeys();
     this.showTitle();
+  }
+
+  setTouch(touch: TouchControls): void {
+    this.touch = touch;
+    touch.mount(this.root);
   }
 
   get currentMode(): UiMode {
@@ -204,6 +211,24 @@ export class UiController {
     });
   }
 
+  /** Poll do toque — chamar a cada frame. */
+  pollTouch(): void {
+    if (!this.touch?.isEnabled()) return;
+
+    if (this.touch.consumeGlossary()) {
+      if (this.mode === 'glossary') this.closeGlossary();
+      else if (this.mode === 'playing') this.toggleGlossary();
+    }
+
+    if (this.touch.consumeConfirm()) {
+      if (this.mode === 'dialogue' && this.phase === 'turn' && this.engine?.isChoiceTurn()) {
+        this.confirmOption();
+      } else {
+        this.onEnter();
+      }
+    }
+  }
+
   /** Poll do controle — chamar a cada frame depois de gamepad.update(). */
   pollGamepad(pad: GamepadInput): void {
     const confirmDown =
@@ -305,25 +330,42 @@ export class UiController {
   showTitle(): void {
     this.mode = 'title';
     this.hidePlayUi();
+    this.touch?.setEnabled(false);
+    this.touch?.setGameplayVisible(false);
     SoundManager.get().pause();
     this.screenEl.classList.remove('hidden');
     this.screenEl.innerHTML = `
       <h1>DER FREMDER</h1>
       <h2>A Yiddish Language Adventure</h2>
       <p class="tagline">Você acordou num shtetl sem memória. Aprenda iídiche para ser aceito.</p>
+      <div class="title-actions">
+        <button type="button" class="title-btn" id="btn-start">Começar</button>
+        <button type="button" class="title-btn title-btn-mobile" id="btn-mobile">Jogar no celular</button>
+      </div>
+      <p class="mobile-tip">No celular: use a tela deitada (paisagem). Joystick à esquerda, botões à direita.</p>
       <div class="prompt">[ Enter / A ] Começar · [ M ] Som</div>
     `;
+    this.$('btn-start').addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.handlers.onStartGame();
+    });
+    this.$('btn-mobile').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      await this.touch?.requestLandscape();
+      this.handlers.onStartGame({ mobile: true });
+    });
   }
 
   showBanner(chapter: number): void {
     this.mode = 'banner';
     this.hidePlayUi();
+    this.touch?.setGameplayVisible(!!this.touch?.isEnabled());
     const b = chapterBanner(chapter);
     this.screenEl.classList.remove('hidden');
     this.screenEl.innerHTML = `
       <h2>${b.title}</h2>
       <p>${b.body}</p>
-      <div class="prompt">[ Enter ] Continuar</div>
+      <div class="prompt">[ Enter / OK ] Continuar</div>
     `;
   }
 
@@ -333,6 +375,11 @@ export class UiController {
     this.hudEl.classList.remove('hidden');
     this.lockHintEl.classList.remove('hidden');
     this.crosshairEl.classList.add('hidden');
+    this.touch?.setGameplayVisible(true);
+    if (this.touch?.isEnabled()) {
+      this.lockHintEl.textContent =
+        'Joystick andar · E interagir · OK confirmar · ☰ glossário';
+    }
     SoundManager.get().resume();
     this.refreshHud();
   }
@@ -389,6 +436,7 @@ export class UiController {
     this.glossaryEl.classList.add('hidden');
     this.dialogueEl.classList.remove('hidden');
     this.reactionEl.classList.add('hidden');
+    this.touch?.setGameplayVisible(!!this.touch?.isEnabled());
     this.renderTurn();
   }
 
@@ -530,6 +578,7 @@ export class UiController {
   showChapterComplete(chapter: number): void {
     this.mode = 'chapterComplete';
     this.hidePlayUi();
+    this.touch?.setGameplayVisible(!!this.touch?.isEnabled());
     const t = chapterCompleteCopy(chapter);
     const nextLabels: Record<number, string> = {
       1: '[ Enter ] Continuar — Capítulo 2',
@@ -552,12 +601,13 @@ Palavras: ${GameState.vocab.length}</p>
   showGameOver(): void {
     this.mode = 'gameOver';
     this.hidePlayUi();
+    this.touch?.setGameplayVisible(!!this.touch?.isEnabled());
     this.screenEl.classList.remove('hidden');
     this.screenEl.innerHTML = `
       <h1 style="color:#a83c3c">GAME OVER</h1>
       <h2>Du bist a fremder.</h2>
       <p>Você é um estranho.</p>
-      <div class="prompt">[ Enter ] Tentar de novo</div>
+      <div class="prompt">[ Enter / OK ] Tentar de novo</div>
     `;
   }
 

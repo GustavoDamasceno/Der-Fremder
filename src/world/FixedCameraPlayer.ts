@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import type { ShtetlWorld } from './ShtetlWorld';
 import type { GamepadInput } from '../input/GamepadInput';
+import type { TouchControls } from '../input/TouchControls';
 
 /**
  * Câmera fixa (ângulo 3/4) que segue o jogador.
- * Movimento no eixo do mundo — teclado ou controle.
+ * Movimento — teclado, controle ou toque.
  */
 export class FixedCameraPlayer {
   readonly camera: THREE.PerspectiveCamera;
@@ -24,6 +25,7 @@ export class FixedCameraPlayer {
   private readonly indoorCamBounds = { min: -5.2, max: 5.2, yMin: 2.8, yMax: 5.4 };
   private indoor = false;
   private gamepad: GamepadInput | null = null;
+  private touch: TouchControls | null = null;
 
   constructor(_canvas: HTMLCanvasElement) {
     this.camera = new THREE.PerspectiveCamera(
@@ -42,6 +44,10 @@ export class FixedCameraPlayer {
 
   setGamepad(pad: GamepadInput): void {
     this.gamepad = pad;
+  }
+
+  setTouch(touch: TouchControls): void {
+    this.touch = touch;
   }
 
   setIndoor(indoor: boolean): void {
@@ -93,6 +99,11 @@ export class FixedCameraPlayer {
         const g = this.gamepad.getMove();
         ix += g.x;
         iz += g.z;
+      }
+      if (this.touch?.isEnabled()) {
+        const t = this.touch.getMove();
+        ix += t.x;
+        iz += t.z;
       }
 
       if (ix * ix + iz * iz > 0) {

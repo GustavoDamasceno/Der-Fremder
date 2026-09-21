@@ -30,6 +30,17 @@ Abra o endereço do Vite (geralmente `http://localhost:5173`).
 | ↑↓ / ←→ | D-pad / stick | Destacar resposta |
 | Esc | B | Fechar glossário |
 
+### Celular (paisagem)
+
+Na tela inicial, toque em **Jogar no celular**. Aparece:
+
+- **Joystick** (esquerda) — andar  
+- **E** — interagir / falar  
+- **OK** — confirmar / avançar telas e diálogos  
+- **☰** — glossário  
+
+Gire o aparelho na horizontal. Em alguns navegadores o jogo tenta entrar em tela cheia e travar a orientação.
+
 Conecte o controle por Bluetooth ou USB (Gamepad API). A câmera é **fixixa** (ângulo 3/4) e segue o personagem.
 
 ## Mecânicas

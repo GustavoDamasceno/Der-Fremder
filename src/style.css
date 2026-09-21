@@ -411,3 +411,175 @@ body,
 .crosshair.hidden {
   display: none;
 }
+
+/* —— Título: botões —— */
+.title-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  pointer-events: auto;
+}
+
+.title-btn {
+  font-family: inherit;
+  font-size: clamp(0.45rem, 1.4vw, 0.6rem);
+  padding: 0.75rem 1.1rem;
+  color: #1a1410;
+  background: #c9a227;
+  border: 2px solid #e8d9b8;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+
+.title-btn:hover,
+.title-btn:active {
+  background: #e0b83a;
+}
+
+.title-btn-mobile {
+  background: transparent;
+  color: #e8d9b8;
+  border-color: #c9a227;
+}
+
+.title-btn-mobile:hover,
+.title-btn-mobile:active {
+  background: rgba(201, 162, 39, 0.2);
+  color: #e8d9b8;
+}
+
+.mobile-tip {
+  margin-top: 1rem !important;
+  font-size: clamp(0.35rem, 1.1vw, 0.48rem) !important;
+  color: #8a7060 !important;
+  max-width: 26rem !important;
+  line-height: 1.7 !important;
+}
+
+/* —— Controles touch (paisagem) —— */
+.touch-controls {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  pointer-events: none;
+}
+
+.touch-controls.hidden {
+  display: none;
+}
+
+.touch-stick {
+  position: absolute;
+  left: max(1.2rem, env(safe-area-inset-left));
+  bottom: max(1.2rem, env(safe-area-inset-bottom));
+  width: 7.5rem;
+  height: 7.5rem;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-stick-base {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(201, 162, 39, 0.55);
+  background: rgba(26, 20, 16, 0.45);
+}
+
+.touch-stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2.6rem;
+  height: 2.6rem;
+  margin: -1.3rem 0 0 -1.3rem;
+  border-radius: 50%;
+  background: rgba(201, 162, 39, 0.85);
+  border: 2px solid #e8d9b8;
+  will-change: transform;
+}
+
+.touch-actions {
+  position: absolute;
+  right: max(1.2rem, env(safe-area-inset-right));
+  bottom: max(1.2rem, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  align-items: flex-end;
+  pointer-events: auto;
+}
+
+.touch-btn {
+  font-family: inherit;
+  font-size: 0.7rem;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  border: 2px solid #c9a227;
+  background: rgba(26, 20, 16, 0.75);
+  color: #e8d9b8;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.touch-btn:active {
+  background: rgba(201, 162, 39, 0.45);
+}
+
+.touch-btn-e {
+  width: 4rem;
+  height: 4rem;
+  font-size: 0.9rem;
+  background: rgba(201, 162, 39, 0.35);
+}
+
+.touch-btn-ok {
+  font-size: 0.55rem;
+}
+
+.touch-btn-tab {
+  font-size: 1rem;
+  width: 2.8rem;
+  height: 2.8rem;
+  opacity: 0.9;
+}
+
+body.touch-mode {
+  touch-action: none;
+  overscroll-behavior: none;
+}
+
+body.touch-mode .hint {
+  bottom: 8.5rem;
+}
+
+body.touch-mode .sound-toggle {
+  bottom: auto;
+  top: 0.6rem;
+  left: 0.6rem;
+}
+
+@media (orientation: portrait) {
+  body.touch-mode .touch-controls::after {
+    content: 'Gire o celular para jogar →';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(26, 20, 16, 0.92);
+    color: #c9a227;
+    padding: 1rem 1.25rem;
+    font-size: 0.55rem;
+    text-align: center;
+    border: 2px solid #c9a227;
+    pointer-events: none;
+    z-index: 30;
+    max-width: 80vw;
+    line-height: 1.6;
+  }
+}
