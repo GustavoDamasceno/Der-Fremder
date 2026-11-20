@@ -65,6 +65,7 @@ export type NpcId =
   | 'inn'
   | 'synagogue'
   | 'school'
+  | 'library'
   | 'horse'
   | 'mendl'
   | 'khaye'

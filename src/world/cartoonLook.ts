@@ -48,4 +48,5 @@ export const CARTOON = {
   cream: 0xfff8e8,
   shulBg: 0x4a3a30,
   schoolBg: 0xd8c8a0,
+  libraryBg: 0x3a2a22,
 } as const;

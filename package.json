@@ -14,6 +14,7 @@
     "vite": "^5.4.11"
   },
   "dependencies": {
-    "three": "^0.186.0"
+    "three": "^0.186.0",
+    "trystero": "^0.27.0"
   }
 }

@@ -16,10 +16,14 @@ import { Footsteps } from '../audio/Footsteps';
 import { SoundManager } from '../audio/SoundManager';
 import { GamepadInput, GP } from '../input/GamepadInput';
 import { TouchControls } from '../input/TouchControls';
+import { LibraryRoom } from '../net/LibraryRoom';
+import { LibraryPresence } from '../net/LibraryPresence';
 import * as THREE from 'three';
+import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 export class GameApp {
   private renderer: THREE.WebGLRenderer;
+  private labelRenderer: CSS2DRenderer;
   private world: ShtetlWorld;
   private player: FixedCameraPlayer;
   private ui: UiController;
@@ -32,6 +36,10 @@ export class GameApp {
   private eHeld = false;
   private interactBlocked = false;
   private playing = false;
+  private libraryRoom = new LibraryRoom();
+  private libraryPresence: LibraryPresence;
+  private librarySyncAcc = 0;
+  private defaultPlayerCoat = 0x8a3c3c;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({
@@ -46,6 +54,14 @@ export class GameApp {
     this.renderer.toneMappingExposure = 1.35;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
+    this.labelRenderer = new CSS2DRenderer();
+    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    this.labelRenderer.domElement.style.position = 'absolute';
+    this.labelRenderer.domElement.style.inset = '0';
+    this.labelRenderer.domElement.style.pointerEvents = 'none';
+    this.labelRenderer.domElement.style.zIndex = '5';
+    canvas.parentElement?.appendChild(this.labelRenderer.domElement);
+
     this.world = new ShtetlWorld();
     this.player = new FixedCameraPlayer(canvas);
     this.player.setGamepad(this.gamepad);
@@ -54,6 +70,10 @@ export class GameApp {
     // Personagem 3D do jogador
     this.playerRig = makePerson('player');
     this.world.scene.add(this.playerRig.root);
+    this.libraryPresence = new LibraryPresence(this.world.getLibraryInterior());
+    this.libraryPresence.setMicClickHandler(() => {
+      void this.toggleLibraryMic();
+    });
 
     this.ui = new UiController(uiRoot, {
       onStartGame: (opts) => this.startNewGame(opts),
@@ -62,6 +82,8 @@ export class GameApp {
       onDialogueFinished: () => this.afterDialogue(),
       onRequestTitle: () => this.toTitle(),
       onSecretDialogue: () => this.ui.startSecretDialogue(),
+      onLibraryJoin: (name, code) => this.completeLibraryJoin(name, code),
+      onLibraryJoinCancel: () => this.cancelLibraryJoin(),
     });
     this.ui.setTouch(this.touch);
 
@@ -71,7 +93,20 @@ export class GameApp {
 
   private onResize(): void {
     this.renderer.setSize(window.innerWidth, window.innerHeight);
+    this.labelRenderer.setSize(window.innerWidth, window.innerHeight);
     this.player.resize();
+  }
+
+  private rebuildPlayerRig(coat?: number): void {
+    const prev = this.playerRig.root;
+    const pos = prev.position.clone();
+    const rotY = prev.rotation.y;
+    this.world.scene.remove(prev);
+    this.libraryPresence.detachLocalName();
+    this.playerRig = makePerson('player', coat != null ? { coat } : undefined);
+    this.playerRig.root.position.copy(pos);
+    this.playerRig.root.rotation.y = rotY;
+    this.world.scene.add(this.playerRig.root);
   }
 
   private startNewGame(opts?: { mobile?: boolean }): void {
@@ -107,6 +142,7 @@ export class GameApp {
   }
 
   private toTitle(): void {
+    void this.exitLibrarySession(false);
     this.playing = false;
     this.touch.setEnabled(false);
     this.touch.setGameplayVisible(false);
@@ -206,6 +242,18 @@ export class GameApp {
       return;
     }
 
+    if (target.id === 'library') {
+      if (this.world.isInLibraryScene()) {
+        void this.exitLibrarySession(true);
+      } else {
+        this.ui.showLibraryJoin({
+          name: LibraryRoom.loadSavedName(),
+          code: LibraryRoom.loadSavedCode(),
+        });
+      }
+      return;
+    }
+
     const tree = getDialogueFor(target.id as NpcId);
     if (!tree) {
       if (GameState.chapter === 4 && !GameState.flags.chapter4Photo) {
@@ -215,6 +263,90 @@ export class GameApp {
     }
 
     this.ui.startDialogue(tree, target.id);
+  }
+
+  private async completeLibraryJoin(name: string, code: string): Promise<void> {
+    try {
+      const joined = await this.libraryRoom.join(name, code, {
+        onPresence: (userId, state) => {
+          this.libraryPresence.upsert(userId, state);
+        },
+        onPeerCount: (count) => {
+          if (this.libraryRoom.isConnected) {
+            this.ui.updateLibraryHud(this.libraryRoom.roomCode, count);
+          }
+        },
+        onPeerStream: () => {
+          /* áudio tratado no LibraryRoom */
+        },
+        onError: (message) => {
+          this.ui.setHint(message);
+        },
+      });
+
+      this.ui.hideLibraryJoin();
+      this.rebuildPlayerRig(joined.coat);
+      this.world.setLibraryMode(true);
+      this.player.setPosition(this.world.spawnInsideLibrary());
+      this.player.facing = 0;
+      this.player.setIndoor(true, 'library');
+      this.player.snapCamera();
+      this.libraryPresence.attachLocalName(this.playerRig.root, joined.name, false);
+      this.ui.enterPlaying();
+      this.ui.showLibraryHud(joined.code, this.libraryRoom.playerCount);
+      SoundManager.get().pause();
+      this.interactBlocked = true;
+      this.eHeld = true;
+      this.libraryRoom.publish({
+        x: this.player.position.x,
+        z: this.player.position.z,
+        facing: this.player.facing,
+        moving: false,
+      });
+    } catch (e) {
+      this.ui.setLibraryJoinError(
+        e instanceof Error ? e.message : 'Não foi possível entrar na sala.',
+      );
+    }
+  }
+
+  private cancelLibraryJoin(): void {
+    this.ui.hideLibraryJoin();
+    this.ui.enterPlaying();
+    this.interactBlocked = true;
+    this.eHeld = true;
+  }
+
+  private async toggleLibraryMic(): Promise<void> {
+    if (!this.libraryRoom.isConnected) return;
+    const on = await this.libraryRoom.setMicEnabled(!this.libraryRoom.micOn);
+    this.libraryPresence.setLocalMicOn(on);
+    this.ui.updateLibraryHud(
+      this.libraryRoom.roomCode,
+      this.libraryRoom.playerCount,
+    );
+  }
+
+  private async exitLibrarySession(returnOutside: boolean): Promise<void> {
+    this.libraryPresence.clear();
+    await this.libraryRoom.leave();
+    this.ui.hideLibraryHud();
+    this.rebuildPlayerRig(this.defaultPlayerCoat);
+
+    if (this.world.isInLibraryScene()) {
+      this.world.setLibraryMode(false);
+    }
+    if (returnOutside) {
+      this.player.setPosition(this.world.spawnOutsideLibrary());
+      this.player.facing = Math.PI;
+      this.player.setIndoor(false);
+      this.player.snapCamera();
+      SoundManager.get().setTrack('shtetl');
+      SoundManager.get().resume();
+      this.ui.enterPlaying();
+      this.interactBlocked = true;
+      this.eHeld = true;
+    }
   }
 
   private dismount(): void {
@@ -255,6 +387,12 @@ export class GameApp {
           this.ui.setHint('[ E ] Sair da escola');
         } else {
           this.ui.setHint('[ E ] Entrar na escola');
+        }
+      } else if (target.id === 'library') {
+        if (this.world.isInLibraryScene()) {
+          this.ui.setHint('[ E ] Sair da biblioteca');
+        } else {
+          this.ui.setHint('[ E ] Entrar na biblioteca');
         }
       } else if (target.id === 'horse') {
         this.ui.setHint('[ E ] Montar no cavalo');
@@ -340,7 +478,28 @@ export class GameApp {
 
     if (canMove) this.updateHints();
 
+    if (this.libraryRoom.isConnected && this.world.isInLibraryScene()) {
+      this.librarySyncAcc += dt;
+      if (this.librarySyncAcc >= 0.08) {
+        this.librarySyncAcc = 0;
+        this.libraryRoom.publish({
+          x: this.player.position.x,
+          z: this.player.position.z,
+          facing: this.player.facing,
+          moving,
+        });
+      }
+      this.libraryPresence.update(dt);
+      const { localLevel, peerLevels } = this.libraryRoom.updateSpatialAudio(
+        this.player.position.x,
+        this.player.position.z,
+        this.libraryPresence.getRemotePositions(),
+      );
+      this.libraryPresence.setSpeakingLevels(localLevel, peerLevels);
+    }
+
     this.renderer.render(this.world.scene, this.player.camera);
+    this.labelRenderer.render(this.world.scene, this.player.camera);
     requestAnimationFrame((t) => this.frame(t));
   }
 }

@@ -306,7 +306,12 @@ function makeSeferTorah(): THREE.Group {
   return g;
 }
 
-function makePerson(style: PersonStyle): PersonRig {
+export type MakePersonOpts = {
+  /** Cor do casaco (ex.: sala multiplayer). */
+  coat?: number;
+};
+
+function makePerson(style: PersonStyle, opts?: MakePersonOpts): PersonRig {
   const g = new THREE.Group();
 
   type Pal = {
@@ -525,7 +530,8 @@ function makePerson(style: PersonStyle): PersonRig {
       pants: 0x2a3a32,
     },
   };
-  const p = palette[style];
+  const p = { ...palette[style] };
+  if (opts?.coat != null) p.coat = opts.coat;
   const isWoman =
     style === 'rivke' ||
     style === 'tsipe' ||
@@ -1140,29 +1146,38 @@ export class ShtetlWorld {
   private readonly outdoor = new THREE.Group();
   private readonly shulInterior = new THREE.Group();
   private readonly schoolInterior = new THREE.Group();
+  private readonly libraryInterior = new THREE.Group();
   private inShul = false;
   private inSchool = false;
+  private inLibrary = false;
   private readonly outdoorColliders: Collider[] = [];
   private readonly outdoorCircles: CircleSolid[] = [];
   private readonly shulColliders: Collider[] = [];
   private readonly shulCircles: CircleSolid[] = [];
   private readonly schoolColliders: Collider[] = [];
   private readonly schoolCircles: CircleSolid[] = [];
+  private readonly libraryColliders: Collider[] = [];
+  private readonly libraryCircles: CircleSolid[] = [];
   private outdoorInteractables: Interactable[] = [];
   private readonly shulInteractables: Interactable[] = [];
   private readonly schoolInteractables: Interactable[] = [];
+  private readonly libraryInteractables: Interactable[] = [];
   private buildingShul = false;
   private buildingSchool = false;
+  private buildingLibrary = false;
   private outdoorHemi!: THREE.HemisphereLight;
   private outdoorSun!: THREE.DirectionalLight;
   private shulLight!: THREE.PointLight;
   private shulFill!: THREE.HemisphereLight;
   private schoolLight!: THREE.PointLight;
   private schoolFill!: THREE.HemisphereLight;
+  private libraryLight!: THREE.PointLight;
+  private libraryFill!: THREE.HemisphereLight;
   private readonly cows: GrazingCow[] = [];
   private grass: DynamicGrass | null = null;
   /** Fachada da escola (mundo aberto) — para spawn ao sair. */
   private schoolDoorPos = new THREE.Vector3(-36, 0, -1.5);
+  private libraryDoorPos = new THREE.Vector3(44, 0, -18);
   /** Cavalo montável do celeiro. */
   private rideable: RideableHorse | null = null;
   private rideableInteractable: Interactable | null = null;
@@ -1205,8 +1220,10 @@ export class ShtetlWorld {
     this.scene.add(this.outdoor);
     this.scene.add(this.shulInterior);
     this.scene.add(this.schoolInterior);
+    this.scene.add(this.libraryInterior);
     this.shulInterior.visible = false;
     this.schoolInterior.visible = false;
+    this.libraryInterior.visible = false;
 
     this.shulLight = new THREE.PointLight(0xffe0b0, 2.2, 32, 1.5);
     this.shulLight.position.set(0, 4.2, 0);
@@ -1224,6 +1241,14 @@ export class ShtetlWorld {
     this.schoolFill.visible = false;
     this.scene.add(this.schoolFill);
 
+    this.libraryLight = new THREE.PointLight(0xffe8c8, 2.4, 40, 1.2);
+    this.libraryLight.position.set(0, 5.2, 0);
+    this.libraryLight.visible = false;
+    this.scene.add(this.libraryLight);
+    this.libraryFill = new THREE.HemisphereLight(0xfff4e0, 0x5a4030, 1.1);
+    this.libraryFill.visible = false;
+    this.scene.add(this.libraryFill);
+
     this.buildGround();
     this.buildBuildings();
     this.buildJewishDetails();
@@ -1238,6 +1263,7 @@ export class ShtetlWorld {
 
     this.buildSynagogueInterior();
     this.buildSchoolInterior();
+    this.buildLibraryInterior();
     this.setSynagogueMode(false);
   }
 
@@ -1247,7 +1273,8 @@ export class ShtetlWorld {
       if (
         child === this.outdoor ||
         child === this.shulInterior ||
-        child === this.schoolInterior
+        child === this.schoolInterior ||
+        child === this.libraryInterior
       ) {
         continue;
       }
@@ -1265,6 +1292,7 @@ export class ShtetlWorld {
     };
     if (this.buildingShul) this.shulColliders.push(c);
     else if (this.buildingSchool) this.schoolColliders.push(c);
+    else if (this.buildingLibrary) this.libraryColliders.push(c);
     else this.colliders.push(c);
   }
 
@@ -1272,6 +1300,7 @@ export class ShtetlWorld {
     const c = { x, z, r };
     if (this.buildingShul) this.shulCircles.push(c);
     else if (this.buildingSchool) this.schoolCircles.push(c);
+    else if (this.buildingLibrary) this.libraryCircles.push(c);
     else this.circles.push(c);
   }
 
@@ -1293,7 +1322,7 @@ export class ShtetlWorld {
   private buildGround(): void {
     this.grass = new DynamicGrass(this.scene);
     const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(140, 140),
+      new THREE.PlaneGeometry(160, 160),
       this.grass.groundMat,
     );
     ground.rotation.x = -Math.PI / 2;
@@ -1315,6 +1344,12 @@ export class ShtetlWorld {
     addPath(7, 22, 0, 36);
     // Rua leste–oeste central
     addPath(80, 8, 0, 0);
+    // Prolongamento leste (em direção ao celeiro / biblioteca)
+    addPath(36, 7, 48, 0);
+    // Rua leste do pasto — contorna o celeiro por fora até a biblioteca
+    addPath(6.5, 40, 56, -18);
+    // Travessa até a praça da biblioteca
+    addPath(14, 6.5, 52, -28);
     // Rua transversal no fundo norte
     addPath(56, 6.5, 0, 34);
     // Travessas laterais no norte
@@ -1602,6 +1637,10 @@ export class ShtetlWorld {
     this.buildingShul = false;
   }
 
+  private isAnyIndoor(): boolean {
+    return this.inShul || this.inSchool || this.inLibrary;
+  }
+
   private refreshModeSets(): void {
     this.colliders.length = 0;
     this.circles.length = 0;
@@ -1614,6 +1653,10 @@ export class ShtetlWorld {
       this.colliders.push(...this.schoolColliders);
       this.circles.push(...this.schoolCircles);
       this.interactables.push(...this.schoolInteractables);
+    } else if (this.inLibrary) {
+      this.colliders.push(...this.libraryColliders);
+      this.circles.push(...this.libraryCircles);
+      this.interactables.push(...this.libraryInteractables);
     } else {
       this.colliders.push(...this.outdoorColliders);
       this.circles.push(...this.outdoorCircles);
@@ -1629,6 +1672,26 @@ export class ShtetlWorld {
     return this.inSchool;
   }
 
+  isInLibraryScene(): boolean {
+    return this.inLibrary;
+  }
+
+  private applyOutdoorVisibility(): void {
+    const indoor = this.isAnyIndoor();
+    this.outdoor.visible = !indoor;
+    this.outdoorHemi.visible = !indoor;
+    this.outdoorSun.visible = !indoor;
+    this.shulInterior.visible = this.inShul;
+    this.schoolInterior.visible = this.inSchool;
+    this.libraryInterior.visible = this.inLibrary;
+    this.shulLight.visible = this.inShul;
+    this.shulFill.visible = this.inShul;
+    this.schoolLight.visible = this.inSchool;
+    this.schoolFill.visible = this.inSchool;
+    this.libraryLight.visible = this.inLibrary;
+    this.libraryFill.visible = this.inLibrary;
+  }
+
   private applyNpcVisibility(): void {
     for (const npc of this.npcs) {
       if (npc.id === 'shloyme') continue; // refreshChapterVisibility
@@ -1636,29 +1699,29 @@ export class ShtetlWorld {
       const isSchoolNpc = ShtetlWorld.SCHOOL_NPCS.has(npc.id);
       if (this.inShul) npc.mesh.visible = isShulNpc;
       else if (this.inSchool) npc.mesh.visible = isSchoolNpc;
+      else if (this.inLibrary) npc.mesh.visible = false; // vazia — sem personagens
       else npc.mesh.visible = !isShulNpc && !isSchoolNpc;
     }
   }
 
+  private applyOutdoorSky(): void {
+    this.scene.background = new THREE.Color(CARTOON.sky);
+    this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
+  }
+
   setSynagogueMode(inside: boolean): void {
     this.inShul = inside;
-    if (inside) this.inSchool = false;
-    this.outdoor.visible = !inside && !this.inSchool;
-    this.shulInterior.visible = inside;
-    this.schoolInterior.visible = this.inSchool;
-    this.outdoorHemi.visible = !inside && !this.inSchool;
-    this.outdoorSun.visible = !inside && !this.inSchool;
-    this.shulLight.visible = inside;
-    this.shulFill.visible = inside;
-    this.schoolLight.visible = this.inSchool;
-    this.schoolFill.visible = this.inSchool;
+    if (inside) {
+      this.inSchool = false;
+      this.inLibrary = false;
+    }
+    this.applyOutdoorVisibility();
 
     if (inside) {
       this.scene.background = new THREE.Color(CARTOON.shulBg);
       this.scene.fog = new THREE.Fog(CARTOON.shulBg, 12, 28);
-    } else if (!this.inSchool) {
-      this.scene.background = new THREE.Color(CARTOON.sky);
-      this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
+    } else if (!this.isAnyIndoor()) {
+      this.applyOutdoorSky();
     }
 
     this.applyNpcVisibility();
@@ -1668,23 +1731,37 @@ export class ShtetlWorld {
 
   setSchoolMode(inside: boolean): void {
     this.inSchool = inside;
-    if (inside) this.inShul = false;
-    this.outdoor.visible = !inside && !this.inShul;
-    this.schoolInterior.visible = inside;
-    this.shulInterior.visible = this.inShul;
-    this.outdoorHemi.visible = !inside && !this.inShul;
-    this.outdoorSun.visible = !inside && !this.inShul;
-    this.schoolLight.visible = inside;
-    this.schoolFill.visible = inside;
-    this.shulLight.visible = this.inShul;
-    this.shulFill.visible = this.inShul;
+    if (inside) {
+      this.inShul = false;
+      this.inLibrary = false;
+    }
+    this.applyOutdoorVisibility();
 
     if (inside) {
       this.scene.background = new THREE.Color(CARTOON.schoolBg);
       this.scene.fog = new THREE.Fog(CARTOON.schoolBg, 14, 32);
-    } else if (!this.inShul) {
-      this.scene.background = new THREE.Color(CARTOON.sky);
-      this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
+    } else if (!this.isAnyIndoor()) {
+      this.applyOutdoorSky();
+    }
+
+    this.applyNpcVisibility();
+    this.refreshModeSets();
+    this.refreshChapterVisibility();
+  }
+
+  setLibraryMode(inside: boolean): void {
+    this.inLibrary = inside;
+    if (inside) {
+      this.inShul = false;
+      this.inSchool = false;
+    }
+    this.applyOutdoorVisibility();
+
+    if (inside) {
+      this.scene.background = new THREE.Color(CARTOON.libraryBg);
+      this.scene.fog = new THREE.Fog(CARTOON.libraryBg, 18, 42);
+    } else if (!this.isAnyIndoor()) {
+      this.applyOutdoorSky();
     }
 
     this.applyNpcVisibility();
@@ -1699,6 +1776,19 @@ export class ShtetlWorld {
 
   spawnOutsideSchool(): THREE.Vector3 {
     return this.schoolDoorPos.clone();
+  }
+
+  spawnInsideLibrary(): THREE.Vector3 {
+    return new THREE.Vector3(0, 0, -11.5);
+  }
+
+  /** Grupo do interior da biblioteca (avatares remotos / labels). */
+  getLibraryInterior(): THREE.Group {
+    return this.libraryInterior;
+  }
+
+  spawnOutsideLibrary(): THREE.Vector3 {
+    return this.libraryDoorPos.clone();
   }
 
   private tree(x: number, z: number): void {
@@ -2236,6 +2326,187 @@ export class ShtetlWorld {
     add(box(0.07, 0.4, 0.07, COLORS.wood, x + 0.18, 0.2, z - 0.65));
   }
 
+  /**
+   * A casa mais bela do shtetl — biblioteca de sefarim.
+   * Fachada ornada; interior é cenário próprio (sem NPCs).
+   */
+  private buildGrandLibrary(x: number, z: number): void {
+    const w = 14;
+    const d = 11;
+    const h = 5.4;
+
+    // Base de pedra
+    this.scene.add(box(w + 1.2, 0.55, d + 1.2, COLORS.stone, x, 0.28, z));
+    // Corpo creme
+    this.scene.add(box(w, h, d, 0xfff4e4, x, h / 2 + 0.55, z));
+    // Pilares / cantoneiras
+    for (const sx of [-1, 1] as const) {
+      for (const sz of [-1, 1] as const) {
+        this.scene.add(
+          box(0.45, h + 0.3, 0.45, 0xf0e0c8, x + sx * (w / 2 - 0.15), h / 2 + 0.55, z + sz * (d / 2 - 0.15)),
+        );
+      }
+    }
+    // Faixa dourada
+    this.scene.add(box(w + 0.2, 0.18, d + 0.2, COLORS.gold, x, 2.2, z));
+    // Telhado azul-ardósia com cumeeira dourada
+    this.scene.add(box(w + 1.4, 0.45, d + 1.4, 0x2f4f8a, x, h + 0.75, z));
+    this.scene.add(box(w * 0.4, 0.55, d + 0.5, 0x243a6a, x, h + 1.15, z));
+    this.scene.add(box(w * 0.15, 0.2, d + 0.2, COLORS.gold, x, h + 1.45, z));
+    // Mansardas
+    for (const sx of [-3.2, 3.2] as const) {
+      this.scene.add(box(2.2, 1.1, 1.4, 0x2f4f8a, x + sx, h + 0.55, z + d / 2 - 0.4));
+      this.scene.add(box(1.2, 0.9, 0.1, 0x7eb6d9, x + sx, h + 0.5, z + d / 2 + 0.35));
+    }
+
+    this.addCollider(x, z, w + 1.0, d + 1.0);
+
+    const doorZ = z + d / 2 + 0.08;
+    // Escadaria
+    this.scene.add(box(5.2, 0.28, 1.6, COLORS.stone, x, 0.2, doorZ + 0.9));
+    this.scene.add(box(4.4, 0.28, 1.1, COLORS.stoneDark, x, 0.45, doorZ + 0.45));
+    this.addOrientedBox(x, doorZ + 0.7, 5.0, 2.0, 0);
+
+    // Colunas da entrada
+    for (const sx of [-1.6, 1.6] as const) {
+      this.scene.add(cyl(0.22, 0.26, 3.4, 0xf5ecd8, x + sx, 2.3, doorZ + 0.15, 10));
+      this.scene.add(box(0.55, 0.18, 0.55, COLORS.gold, x + sx, 4.05, doorZ + 0.15));
+      this.scene.add(box(0.55, 0.18, 0.55, COLORS.stone, x + sx, 0.7, doorZ + 0.15));
+    }
+    // Frontão
+    this.scene.add(box(4.6, 0.25, 0.7, 0x2f4f8a, x, 4.35, doorZ + 0.1));
+    this.scene.add(box(3.6, 0.7, 0.15, 0xfff8e8, x, 4.75, doorZ + 0.2));
+    const star = makeStarOfDavid(0.55, COLORS.gold);
+    star.position.set(x, 4.75, doorZ + 0.32);
+    this.scene.add(star);
+
+    // Porta dupla ornamentada
+    this.scene.add(box(2.0, 2.7, 0.14, 0x5a3a22, x, 1.9, doorZ));
+    this.scene.add(box(0.08, 2.5, 0.06, COLORS.gold, x, 1.9, doorZ + 0.08));
+    this.scene.add(box(0.14, 0.14, 0.1, COLORS.gold, x + 0.7, 1.9, doorZ + 0.1));
+    this.scene.add(box(0.14, 0.14, 0.1, COLORS.gold, x - 0.7, 1.9, doorZ + 0.1));
+    this.scene.add(makeMezuzah(x + 1.15, 2.7, doorZ + 0.06));
+
+    // Janelas com vitral + floreiras
+    for (const sx of [-4.2, 4.2] as const) {
+      this.scene.add(box(2.0, 2.2, 0.12, COLORS.wood, x + sx, 2.6, doorZ));
+      this.scene.add(box(1.7, 1.9, 0.08, 0x6a9ad4, x + sx, 2.6, doorZ + 0.05));
+      this.scene.add(box(0.08, 1.9, 0.06, COLORS.gold, x + sx, 2.6, doorZ + 0.1));
+      this.scene.add(box(1.7, 0.08, 0.06, COLORS.gold, x + sx, 2.6, doorZ + 0.1));
+      this.scene.add(box(2.1, 0.35, 0.55, COLORS.woodLight, x + sx, 1.35, doorZ + 0.25));
+      this.scene.add(cyl(0.08, 0.09, 0.12, 0xc45c3a, x + sx - 0.4, 1.6, doorZ + 0.25, 6));
+      this.scene.add(cyl(0.08, 0.09, 0.12, 0xe08030, x + sx, 1.6, doorZ + 0.25, 6));
+      this.scene.add(cyl(0.08, 0.09, 0.12, 0x6a3a8a, x + sx + 0.4, 1.6, doorZ + 0.25, 6));
+    }
+
+    // Placa
+    this.scene.add(box(3.8, 0.7, 0.12, 0x2a3a5a, x, 3.55, doorZ + 0.18));
+    this.scene.add(box(3.4, 0.45, 0.08, 0xf0e6d0, x, 3.55, doorZ + 0.24));
+
+    // Lanternas
+    for (const sx of [-2.6, 2.6] as const) {
+      this.scene.add(cyl(0.06, 0.06, 1.4, COLORS.wood, x + sx, 1.5, doorZ + 1.5, 6));
+      this.scene.add(box(0.35, 0.4, 0.35, COLORS.gold, x + sx, 2.3, doorZ + 1.5));
+      this.scene.add(box(0.28, 0.28, 0.28, 0xffe080, x + sx, 2.3, doorZ + 1.5));
+    }
+
+    // Jardim / caminho
+    const path = new THREE.Mesh(
+      new THREE.PlaneGeometry(7, 10),
+      mat(COLORS.path),
+    );
+    path.rotation.x = -Math.PI / 2;
+    path.position.set(x, 0.021, doorZ + 4.5);
+    path.receiveShadow = true;
+    this.scene.add(path);
+    for (const [ox, oz] of [
+      [-4.5, 3],
+      [4.5, 3],
+      [-5, 6],
+      [5, 6],
+    ] as const) {
+      this.scene.add(cyl(0.55, 0.65, 0.7, 0x3a8a4a, x + ox, 0.35, doorZ + oz, 8));
+    }
+
+    this.libraryDoorPos.set(x, 0, doorZ + 1.8);
+    this.interactables.push({
+      id: 'library',
+      name: 'Biblioteca',
+      position: this.libraryDoorPos.clone(),
+      radius: 2.8,
+    });
+  }
+
+  /** Interior da biblioteca — salão amplo e aberto (reuniões), sem NPCs. */
+  private buildLibraryInterior(): void {
+    this.buildingLibrary = true;
+    const add = (o: THREE.Object3D) => this.libraryInterior.add(o);
+
+    const w = 32;
+    const d = 28;
+    const h = 8;
+    const t = 0.45;
+
+    add(box(w, 0.14, d, 0x8a6a48, 0, -0.07, 0));
+    // Um único tapete central — espaço livre para andar
+    add(box(10, 0.05, 14, 0x8a3a3a, 0, 0.02, 0));
+    add(box(w, 0.25, d, 0x5a4030, 0, h, 0));
+
+    add(box(w, h, t, 0xf0e6d0, 0, h / 2, -d / 2 + t / 2));
+    add(box(w, h, t, 0xe8dcc8, 0, h / 2, d / 2 - t / 2));
+    add(box(t, h, d, 0xefe4ce, -w / 2 + t / 2, h / 2, 0));
+    add(box(t, h, d, 0xefe4ce, w / 2 - t / 2, h / 2, 0));
+    this.addCollider(0, -d / 2 + t / 2, w + 0.4, t + 0.45);
+    this.addCollider(0, d / 2 - t / 2, w + 0.4, t + 0.45);
+    this.addCollider(-w / 2 + t / 2, 0, t + 0.45, d + 0.4);
+    this.addCollider(w / 2 - t / 2, 0, t + 0.45, d + 0.4);
+
+    const placeCase = (x: number, z: number, rotY: number, width: number) => {
+      const g = makeBookcase(0, 0, width);
+      g.position.set(x, 0, z);
+      g.rotation.y = rotY;
+      add(g);
+      const c = Math.abs(Math.cos(rotY));
+      const s = Math.abs(Math.sin(rotY));
+      this.addOrientedBox(x, z, 0.6 * c + width * s, width * c + 0.6 * s, 0);
+    };
+
+    // Poucas estantes só nas paredes — centro livre
+    placeCase(-9, d / 2 - t - 0.55, 0, 8);
+    placeCase(9, d / 2 - t - 0.55, 0, 8);
+    placeCase(-10, -d / 2 + t + 0.55, Math.PI, 7);
+    placeCase(10, -d / 2 + t + 0.55, Math.PI, 7);
+    placeCase(-w / 2 + t + 0.55, 4, -Math.PI / 2, 8);
+    placeCase(-w / 2 + t + 0.55, -6, -Math.PI / 2, 7);
+    placeCase(w / 2 - t - 0.55, 4, Math.PI / 2, 8);
+    placeCase(w / 2 - t - 0.55, -6, Math.PI / 2, 7);
+
+    // Lustres
+    for (const [lx, lz] of [
+      [0, 0],
+      [-8, 6],
+      [8, 6],
+      [-8, -6],
+      [8, -6],
+    ] as const) {
+      add(cyl(0.05, 0.05, 1.4, COLORS.gold, lx, h - 0.8, lz, 6));
+      add(box(0.75, 0.15, 0.75, COLORS.gold, lx, h - 1.5, lz));
+      add(box(0.55, 0.22, 0.55, 0xffe8a8, lx, h - 1.5, lz));
+    }
+
+    // Porta de saída
+    add(box(2.4, 2.5, 0.14, 0x5a3a22, 0, 1.25, -d / 2 + t + 0.05));
+    add(box(0.12, 0.12, 0.1, COLORS.gold, 0.75, 1.25, -d / 2 + t - 0.05));
+    this.libraryInteractables.push({
+      id: 'library',
+      name: 'Saída',
+      position: new THREE.Vector3(0, 0, -d / 2 + 2.4),
+      radius: 2.8,
+    });
+
+    this.buildingLibrary = false;
+  }
+
   /** Oficina / alfaiate do shtetl. */
   private buildWorkshop(x: number, z: number): void {
     const w = 7;
@@ -2462,7 +2733,7 @@ export class ShtetlWorld {
 
   mountHorse(): boolean {
     if (!this.rideable || this.rideable.mounted) return false;
-    if (this.inShul || this.inSchool) return false;
+    if (this.isAnyIndoor()) return false;
     this.rideable.mounted = true;
     return true;
   }
@@ -2697,6 +2968,9 @@ export class ShtetlWorld {
     // Celeiro com cavalos — afastado a leste
     this.buildBarn(34, -6);
 
+    // Biblioteca — isolada ao sul do pasto do celeiro (sem sobrepor a cerca)
+    this.buildGrandLibrary(52, -42);
+
     // Lago + vacas no fundo sul (longe das ruas)
     this.buildLakeAndCows();
 
@@ -2705,14 +2979,16 @@ export class ShtetlWorld {
       [-34, -34],
       [34, -34],
       [-48, 8], // longe da escola (−36,−8)
-      [38, 0],
+      [38, 8],
       [-40, 40],
       [40, 40],
       [20, -40],
       [-46, 18],
       [38, 16],
       [-48, -22],
-      [38, -14],
+      [48, -8], // longe do pasto
+      [46, -48], // ao lado da biblioteca
+      [62, -30], // margem da rua da biblioteca
       // Gramados (fora das casas novas e do lago)
       [-14, 20],
       [14, 20],
@@ -2738,11 +3014,12 @@ export class ShtetlWorld {
       this.tree(x, z);
     }
 
-    const bound = 48;
-    this.addCollider(0, -bound - 1, 110, 2);
-    this.addCollider(0, bound + 1, 110, 2);
-    this.addCollider(-bound - 1, 0, 2, 110);
-    this.addCollider(bound + 1, 0, 2, 110);
+    // Limite amplo o bastante para chegar à biblioteca (52, −42)
+    const bound = 64;
+    this.addCollider(0, -bound - 1, 140, 2);
+    this.addCollider(0, bound + 1, 140, 2);
+    this.addCollider(-bound - 1, 0, 2, 140);
+    this.addCollider(bound + 1, 0, 2, 140);
   }
 
   /** Símbolos e detalhes judaicos — sempre no gramado, fora das paredes. */
@@ -2983,7 +3260,7 @@ export class ShtetlWorld {
     paused = false,
     playerPos?: { x: number; z: number },
   ): void {
-    if (this.inShul || this.inSchool) return;
+    if (this.isAnyIndoor()) return;
     const playerR = 0.55;
 
     for (const npc of this.npcs) {
@@ -3380,6 +3657,7 @@ export class ShtetlWorld {
     const isSchool = ShtetlWorld.SCHOOL_NPCS.has(npc.id);
     if (this.inShul) return isShul;
     if (this.inSchool) return isSchool;
+    if (this.inLibrary) return false;
     return !isShul && !isSchool;
   }
 
@@ -3407,7 +3685,7 @@ export class ShtetlWorld {
       if (dx * dx + dz * dz < minDist * minDist) return true;
     }
 
-    if (!this.inShul && !this.inSchool) {
+    if (!this.isAnyIndoor()) {
       for (const cow of this.cows) {
         const dx = x - cow.mesh.position.x;
         const dz = z - cow.mesh.position.z;

@@ -52,7 +52,8 @@ export type UiMode =
   | 'chapterComplete'
   | 'gameOver'
   | 'ending'
-  | 'secretEnd';
+  | 'secretEnd'
+  | 'libraryJoin';
 
 type Handlers = {
   onStartGame: (opts?: { mobile?: boolean }) => void;
@@ -61,6 +62,8 @@ type Handlers = {
   onDialogueFinished: () => void;
   onRequestTitle: () => void;
   onSecretDialogue: () => void;
+  onLibraryJoin?: (name: string, code: string) => void | Promise<void>;
+  onLibraryJoinCancel?: () => void;
 };
 
 export class UiController {
@@ -89,6 +92,9 @@ export class UiController {
   private practiceEl!: HTMLElement;
   private lockHintEl!: HTMLElement;
   private crosshairEl!: HTMLElement;
+  private libraryJoinEl!: HTMLElement;
+  private libraryHudEl!: HTMLElement;
+  private libraryJoinBusy = false;
   private touch: TouchControls | null = null;
 
   constructor(root: HTMLElement, handlers: Handlers) {
@@ -138,6 +144,26 @@ export class UiController {
         <div class="close-tip">[ Tab ] / [ Esc ] Fechar</div>
       </div>
       <div class="practice-overlay hidden" id="practice"></div>
+      <div class="library-join hidden panel" id="library-join">
+        <h2>Sala de reunião</h2>
+        <p class="library-join-lead">Entre com um nome e o código da sala para encontrar outras pessoas.</p>
+        <label class="library-field">
+          <span>Seu nome</span>
+          <input id="library-name" type="text" maxlength="20" autocomplete="nickname" placeholder="ex.: Moyshe" />
+        </label>
+        <label class="library-field">
+          <span>Código da sala</span>
+          <input id="library-code" type="text" maxlength="16" autocomplete="off" placeholder="ex.: FAMILIA" />
+        </label>
+        <p class="library-join-error hidden" id="library-join-error"></p>
+        <div class="library-join-actions">
+          <button type="button" class="btn" id="library-join-btn">Entrar</button>
+          <button type="button" class="btn btn-ghost" id="library-cancel-btn">Cancelar</button>
+        </div>
+      </div>
+      <div class="library-hud hidden panel" id="library-hud">
+        <span id="library-room-info">Sala · 1/10</span>
+      </div>
       <div class="screen" id="screen"></div>
     `;
 
@@ -150,6 +176,24 @@ export class UiController {
     this.practiceEl = this.$('practice');
     this.lockHintEl = this.$('lock-hint');
     this.crosshairEl = this.$('crosshair');
+    this.libraryJoinEl = this.$('library-join');
+    this.libraryHudEl = this.$('library-hud');
+
+    this.$('library-join-btn').addEventListener('click', () => void this.submitLibraryJoin());
+    this.$('library-cancel-btn').addEventListener('click', () => this.cancelLibraryJoin());
+    for (const id of ['library-name', 'library-code'] as const) {
+      const input = this.$(id) as HTMLInputElement;
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          void this.submitLibraryJoin();
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          this.cancelLibraryJoin();
+        }
+      });
+    }
 
     const soundBtn = this.$('sound-toggle');
     soundBtn.addEventListener('click', (e) => {
@@ -211,6 +255,13 @@ export class UiController {
         }
       }
 
+      if (this.mode === 'libraryJoin') {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          this.cancelLibraryJoin();
+        }
+        return;
+      }
       if (e.code === 'Enter') this.onEnter();
       if (e.code === 'Tab') {
         e.preventDefault();
@@ -709,6 +760,75 @@ E o shtetl inteiro sorri.</p>
     this.screenEl.classList.add('hidden');
   }
 
+  showLibraryJoin(defaults?: { name?: string; code?: string }): void {
+    this.mode = 'libraryJoin';
+    this.libraryJoinBusy = false;
+    this.hintEl.classList.add('hidden');
+    this.libraryHudEl.classList.add('hidden');
+    this.libraryJoinEl.classList.remove('hidden');
+    const err = this.$('library-join-error');
+    err.classList.add('hidden');
+    err.textContent = '';
+    const nameInput = this.$('library-name') as HTMLInputElement;
+    const codeInput = this.$('library-code') as HTMLInputElement;
+    nameInput.value = defaults?.name ?? '';
+    codeInput.value = defaults?.code ?? '';
+    const joinBtn = this.$('library-join-btn') as HTMLButtonElement;
+    joinBtn.disabled = false;
+    joinBtn.textContent = 'Entrar';
+    window.setTimeout(() => nameInput.focus(), 50);
+  }
+
+  setLibraryJoinError(message: string): void {
+    const err = this.$('library-join-error');
+    err.textContent = message;
+    err.classList.toggle('hidden', !message);
+    this.libraryJoinBusy = false;
+    const joinBtn = this.$('library-join-btn') as HTMLButtonElement;
+    joinBtn.disabled = false;
+    joinBtn.textContent = 'Entrar';
+  }
+
+  hideLibraryJoin(): void {
+    this.libraryJoinEl.classList.add('hidden');
+    this.libraryJoinBusy = false;
+  }
+
+  showLibraryHud(code: string, count: number): void {
+    this.libraryHudEl.classList.remove('hidden');
+    this.updateLibraryHud(code, count);
+  }
+
+  hideLibraryHud(): void {
+    this.libraryHudEl.classList.add('hidden');
+  }
+
+  updateLibraryHud(code: string, count: number): void {
+    this.$('library-room-info').textContent = `Sala: ${code} · ${count}/10`;
+  }
+
+  private async submitLibraryJoin(): Promise<void> {
+    if (this.mode !== 'libraryJoin' || this.libraryJoinBusy) return;
+    const name = (this.$('library-name') as HTMLInputElement).value;
+    const code = (this.$('library-code') as HTMLInputElement).value;
+    this.libraryJoinBusy = true;
+    const joinBtn = this.$('library-join-btn') as HTMLButtonElement;
+    joinBtn.disabled = true;
+    joinBtn.textContent = 'Entrando…';
+    this.$('library-join-error').classList.add('hidden');
+    try {
+      await this.handlers.onLibraryJoin?.(name, code);
+    } catch (e) {
+      this.setLibraryJoinError(e instanceof Error ? e.message : 'Falha ao entrar.');
+    }
+  }
+
+  private cancelLibraryJoin(): void {
+    if (this.mode !== 'libraryJoin') return;
+    this.hideLibraryJoin();
+    this.handlers.onLibraryJoinCancel?.();
+  }
+
   private hidePlayUi(): void {
     this.hudEl.classList.add('hidden');
     this.hintEl.classList.add('hidden');
@@ -716,6 +836,8 @@ E o shtetl inteiro sorri.</p>
     this.reactionEl.classList.add('hidden');
     this.glossaryEl.classList.add('hidden');
     this.practiceEl.classList.add('hidden');
+    this.libraryJoinEl?.classList.add('hidden');
+    this.libraryHudEl?.classList.add('hidden');
     this.practiceGame?.destroy();
     this.practiceGame = null;
     this.lockHintEl.classList.add('hidden');

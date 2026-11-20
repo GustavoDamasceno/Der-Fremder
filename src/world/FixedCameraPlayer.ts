@@ -31,8 +31,10 @@ export class FixedCameraPlayer {
   private readonly camOffsetMounted = new THREE.Vector3(0, 16, 18);
   /** Offset da câmera na sinagoga (sala fechada — mais baixa e perto). */
   private readonly camOffsetIndoor = new THREE.Vector3(-3.2, 4.2, 3.8);
-  /** Limites para a câmera não atravessar as paredes (escola / sinagoga). */
-  private readonly indoorCamBounds = { min: -8.5, max: 8.5, yMin: 2.6, yMax: 6.2 };
+  /** Limites para a câmera não atravessar as paredes (interiores). */
+  private indoorCamBounds = { min: -11.5, max: 11.5, yMin: 2.6, yMax: 6.8 };
+  private readonly indoorCamBoundsDefault = { min: -11.5, max: 11.5, yMin: 2.6, yMax: 6.8 };
+  private readonly indoorCamBoundsLibrary = { min: -14.5, max: 14.5, yMin: 2.8, yMax: 7.5 };
   private indoor = false;
   private gamepad: GamepadInput | null = null;
   private touch: TouchControls | null = null;
@@ -60,8 +62,10 @@ export class FixedCameraPlayer {
     this.touch = touch;
   }
 
-  setIndoor(indoor: boolean): void {
+  setIndoor(indoor: boolean, kind: 'default' | 'library' = 'default'): void {
     this.indoor = indoor;
+    this.indoorCamBounds =
+      kind === 'library' ? { ...this.indoorCamBoundsLibrary } : { ...this.indoorCamBoundsDefault };
     this.snapCamera();
   }
 

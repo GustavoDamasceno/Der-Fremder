@@ -138,6 +138,10 @@ export class DynamicGrass {
       { minX: -29, maxX: 29, minZ: 30.5, maxZ: 37.5 },
       { minX: -21.5, maxX: -14.5, minZ: 18, maxZ: 42 },
       { minX: 14.5, maxX: 21.5, minZ: 18, maxZ: 42 },
+      // Rua até a biblioteca (contorna o pasto pelo leste)
+      { minX: 30, maxX: 66, minZ: -3.6, maxZ: 3.6 },
+      { minX: 52.5, maxX: 59.5, minZ: -40, maxZ: 2 },
+      { minX: 44, maxX: 60, minZ: -32, maxZ: -24 },
     ];
     this.clearCircles = [
       { x: 0, z: 0, r: 4.8 },
