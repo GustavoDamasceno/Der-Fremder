@@ -735,7 +735,7 @@ body,
 }
 
 .race-gates {
-  position: absolute;
+    position: absolute;
   right: 0.35rem;
   top: 0.35rem;
   bottom: 0.35rem;
@@ -1084,12 +1084,152 @@ body.touch-mode .sound-toggle {
   color: #e8d9b8;
   font-size: clamp(0.4rem, 1.1vw, 0.52rem);
   z-index: 15;
-  pointer-events: none;
+  pointer-events: auto;
   white-space: nowrap;
 }
 
 .library-hud.hidden {
   display: none;
+}
+
+.library-hud .btn-coop {
+  font-family: inherit;
+  font-size: 0.42rem;
+  padding: 0.4rem 0.55rem;
+  background: #2a5a3a;
+  color: #e8ffe8;
+  border: 2px solid #6ac97a;
+  cursor: pointer;
+}
+
+.library-hud .btn-coop:hover {
+  background: #3a7a4a;
+}
+
+.coop-panel .coop-voice-note {
+  color: #6ac97a;
+  font-size: 0.4rem;
+  margin-top: 0.35rem;
+}
+
+.coop-faces {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  justify-content: center;
+  margin: 0.75rem 0 0.5rem;
+  max-width: 36rem;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.coop-faces.compact {
+  margin: 0.35rem auto;
+  gap: 0.35rem;
+}
+
+.coop-face {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid #5a4a30;
+  padding: 0.3rem 0.45rem;
+  min-width: 5.5rem;
+}
+
+.coop-face.self {
+  border-color: #c9a227;
+}
+
+.coop-face.answered,
+.coop-face.standing {
+  border-color: #6ac97a;
+  opacity: 0.85;
+}
+
+.coop-face.out {
+  opacity: 0.35;
+  filter: grayscale(1);
+  border-color: #555;
+}
+
+.tile-pawns {
+  display: flex;
+  gap: 0.15rem;
+  justify-content: center;
+  margin-top: 0.25rem;
+  min-height: 0.55rem;
+}
+
+.tile-pawn {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 1px solid #fff8e8;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+.tile-pawn.self {
+  outline: 2px solid #c9a227;
+}
+
+.coop-face-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.coop-face-name {
+  font-size: 0.38rem;
+  color: #e8d9b8;
+  max-width: 5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coop-face-score {
+  font-size: 0.42rem;
+  color: #c9a227;
+}
+
+.coop-avatar {
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: #fff8e8;
+  border: 2px solid #fff8e8;
+  flex-shrink: 0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.coop-avatar.big {
+  width: 4.2rem;
+  height: 4.2rem;
+  font-size: 1.8rem;
+  margin: 0 auto 0.75rem;
+  border-width: 3px;
+  box-shadow: 0 0 18px rgba(201, 162, 39, 0.55);
+}
+
+.coop-winner {
+    text-align: center;
+  margin: 0.75rem 0;
+}
+
+.coop-winner-title {
+  font-size: clamp(0.55rem, 1.6vw, 0.75rem);
+  color: #c9a227;
+  margin-bottom: 0.35rem;
+}
+
+.coop-winner-score {
+  font-size: clamp(0.7rem, 2vw, 1rem);
+  color: #fff8e8;
 }
 
 .nametag {
@@ -1156,7 +1296,7 @@ body.touch-mode .sound-toggle {
 }
 
 .nametag-waves.active {
-  display: flex;
+    display: flex;
 }
 
 .nametag-waves span {

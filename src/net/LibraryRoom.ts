@@ -1,5 +1,20 @@
-import { joinRoom, type Room, type UserState } from 'trystero';
+import {
+  joinRoom,
+  type MessageAction,
+  type Room,
+  type SharedState,
+  type UserState,
+} from 'trystero';
+import { buildMixedFallRounds } from '../data/practice';
 import { normalizeRoomCode, pickFreeCoat } from './libraryColors';
+import {
+  COOP_QUESTION_POOL,
+  COOP_RESOLVE_MS,
+  coopRoundMs,
+  type CoopMatchSnapshot,
+  type CoopPlayerInfo,
+  type CoopRoundPayload,
+} from './coopTypes';
 
 export const LIBRARY_MAX_PLAYERS = 10;
 
@@ -15,6 +30,8 @@ export type PeerPresence = {
   facing: number;
   micOn: boolean;
   moving: boolean;
+  /** Em partida coop — voz isolada do restante da sala */
+  inGame: boolean;
 };
 
 type PresenceHandlers = {
@@ -22,6 +39,7 @@ type PresenceHandlers = {
   onPeerCount: (count: number) => void;
   onPeerStream: (userId: string, stream: MediaStream | null) => void;
   onError: (message: string) => void;
+  onCoopMatch?: (match: CoopMatchSnapshot | null) => void;
 };
 
 type PeerAudioGraph = {
@@ -38,20 +56,42 @@ const STORAGE_CODE = 'df-library-code';
 export class LibraryRoom {
   private room: Room | null = null;
   private presence: UserState<PeerPresence> | null = null;
+  private coopState: SharedState<CoopMatchSnapshot | null> | null = null;
+  private answerAction: MessageAction<{
+    roundIndex: number;
+    roundSeq: number;
+    choice: number;
+  }> | null = null;
   private unsubs: Array<() => void> = [];
   private micStream: MediaStream | null = null;
   private micEnabled = false;
+  private localInGame = false;
   private code = '';
   private localName = '';
   private localCoat = 0x8a3c3c;
   private selfUserId = '';
   private handlers: PresenceHandlers | null = null;
+  private peerInGame = new Map<string, boolean>();
+  private roundTimer: ReturnType<typeof setTimeout> | null = null;
+  private advancing = false;
 
   private audioCtx: AudioContext | null = null;
   private localAnalyser: AnalyserNode | null = null;
   private localMicSource: MediaStreamAudioSourceNode | null = null;
   private localData: Uint8Array | null = null;
   private peerAudio = new Map<string, PeerAudioGraph>();
+
+  get selfId(): string {
+    return this.selfUserId;
+  }
+
+  get inGame(): boolean {
+    return this.localInGame;
+  }
+
+  getCoopMatch(): CoopMatchSnapshot | null {
+    return this.coopState?.get() ?? null;
+  }
 
   get roomCode(): string {
     return this.code;
@@ -139,8 +179,31 @@ export class LibraryRoom {
       facing: 0,
       micOn: false,
       moving: false,
+      inGame: false,
     });
     this.presence = presence;
+
+    this.coopState = room.makeState<CoopMatchSnapshot | null>('coopFall', null);
+    this.unsubs.push(
+      this.coopState.onChange((value) => {
+        handlers.onCoopMatch?.(value);
+        if (value?.phase === 'playing' && value.hostId === this.selfUserId) {
+          this.ensureHostRoundWatch(value);
+        }
+      }),
+    );
+
+    this.answerAction = room.makeAction<{
+      roundIndex: number;
+      roundSeq: number;
+      choice: number;
+    }>('coopAnswer');
+    this.unsubs.push(
+      this.answerAction.onMessage((data, ctx) => {
+        if (this.coopState?.get()?.hostId !== this.selfUserId) return;
+        this.hostReceiveAnswer(ctx.userId, data.roundIndex, data.roundSeq, data.choice);
+      }),
+    );
 
     await new Promise((r) => setTimeout(r, 400));
 
@@ -148,6 +211,7 @@ export class LibraryRoom {
     for (const [uid, st] of Object.entries(presence.getAll())) {
       if (uid === this.selfUserId) continue;
       if (st && typeof st.coat === 'number') takenCoats.push(st.coat);
+      if (st) this.peerInGame.set(uid, !!st.inGame);
     }
     this.localCoat = pickFreeCoat(takenCoats);
 
@@ -159,19 +223,26 @@ export class LibraryRoom {
       facing: 0,
       micOn: false,
       moving: false,
+      inGame: false,
     });
 
     this.unsubs.push(
       presence.onChange((value, ctx) => {
         if (ctx.self) return;
         if (ctx.removed || value == null) {
+          this.peerInGame.delete(ctx.userId);
           handlers.onPresence(ctx.userId, null);
+          this.hostRemovePlayer(ctx.userId);
         } else {
+          this.peerInGame.set(ctx.userId, !!value.inGame);
           handlers.onPresence(ctx.userId, value);
         }
         handlers.onPeerCount(this.playerCount);
       }),
     );
+
+    // Hidrata match existente
+    handlers.onCoopMatch?.(this.coopState.get());
 
     this.unsubs.push(
       room.onUserJoin(() => handlers.onPeerCount(this.playerCount)),
@@ -218,12 +289,318 @@ export class LibraryRoom {
       facing: cur?.facing ?? 0,
       micOn: this.micEnabled,
       moving: cur?.moving ?? false,
+      inGame: this.localInGame,
       ...partial,
     };
     next.name = this.localName;
     next.coat = this.localCoat;
     next.micOn = this.micEnabled;
+    next.inGame = this.localInGame;
     void this.presence.set(next);
+  }
+
+  // ——— Coop: Chão que Cai ———
+
+  async createOrJoinLobby(): Promise<CoopMatchSnapshot> {
+    if (!this.coopState) throw new Error('Sala não conectada.');
+    const me: CoopPlayerInfo = {
+      id: this.selfUserId,
+      name: this.localName,
+      coat: this.localCoat,
+    };
+    const cur = this.coopState.get();
+    if (!cur || cur.phase === 'results') {
+      const lobby: CoopMatchSnapshot = {
+        phase: 'lobby',
+        hostId: this.selfUserId,
+        players: [me],
+        alive: { [this.selfUserId]: true },
+        rounds: [],
+        roundIndex: 0,
+        scores: { [this.selfUserId]: 0 },
+        answers: {},
+        winnerId: null,
+        roundSeq: 0,
+        roundMs: coopRoundMs(0),
+        deadline: 0,
+      };
+      await this.coopState.set(lobby);
+      await this.setInGame(true);
+      return lobby;
+    }
+    if (cur.phase === 'playing' || cur.phase === 'resolving') {
+      throw new Error('Partida em andamento. Espere o fim.');
+    }
+    if (cur.players.some((p) => p.id === this.selfUserId)) {
+      await this.setInGame(true);
+      return cur;
+    }
+    if (cur.players.length >= LIBRARY_MAX_PLAYERS) {
+      throw new Error('Lobby cheio (máx. 10).');
+    }
+    const next: CoopMatchSnapshot = {
+      ...cur,
+      players: [...cur.players, me],
+      alive: { ...cur.alive, [this.selfUserId]: true },
+      scores: { ...cur.scores, [this.selfUserId]: 0 },
+    };
+    await this.coopState.set(next);
+    await this.setInGame(true);
+    return next;
+  }
+
+  async leaveCoop(): Promise<void> {
+    this.clearRoundTimer();
+    const match = this.coopState?.get();
+    await this.setInGame(false);
+    if (!match || !this.coopState) return;
+
+    if (match.hostId === this.selfUserId) {
+      await this.coopState.set(null);
+      return;
+    }
+    if (match.phase === 'lobby') {
+      await this.coopState.set({
+        ...match,
+        players: match.players.filter((p) => p.id !== this.selfUserId),
+      });
+    }
+  }
+
+  async startCoopMatch(): Promise<void> {
+    const match = this.coopState?.get();
+    if (!match || !this.coopState) throw new Error('Sem lobby.');
+    if (match.hostId !== this.selfUserId) throw new Error('Só o anfitrião inicia.');
+    if (match.phase !== 'lobby') throw new Error('Já começou.');
+    if (match.players.length < 1) throw new Error('Precisa de jogadores.');
+
+    const arcade = buildMixedFallRounds(COOP_QUESTION_POOL, 3);
+    const rounds: CoopRoundPayload[] = arcade.map((r) => ({
+      prompt: r.prompt,
+      sub: r.sub,
+      answer: r.answer,
+      choices: r.choices,
+      yi: r.learn.yiddish,
+      pt: r.learn.portuguese,
+    }));
+    const scores: Record<string, number> = {};
+    const answers: Record<string, number> = {};
+    const alive: Record<string, boolean> = {};
+    for (const p of match.players) {
+      scores[p.id] = 0;
+      answers[p.id] = -1;
+      alive[p.id] = true;
+    }
+    const roundMs = coopRoundMs(0);
+    const playing: CoopMatchSnapshot = {
+      ...match,
+      phase: 'playing',
+      alive,
+      rounds,
+      roundIndex: 0,
+      scores,
+      answers,
+      winnerId: null,
+      roundSeq: 1,
+      roundMs,
+      deadline: Date.now() + roundMs,
+    };
+    await this.coopState.set(playing);
+    this.scheduleHostResolve(playing);
+  }
+
+  async submitCoopAnswer(choiceIndex: number): Promise<void> {
+    const match = this.coopState?.get();
+    if (!match || match.phase !== 'playing' || !this.answerAction) return;
+    if (!match.alive[this.selfUserId]) return;
+    if (!match.players.some((p) => p.id === this.selfUserId)) return;
+
+    // Pode trocar de chão até o tempo acabar.
+    if (match.hostId === this.selfUserId) {
+      this.hostReceiveAnswer(
+        this.selfUserId,
+        match.roundIndex,
+        match.roundSeq,
+        choiceIndex,
+      );
+    } else {
+      await this.answerAction.send({
+        roundIndex: match.roundIndex,
+        roundSeq: match.roundSeq,
+        choice: choiceIndex,
+      });
+    }
+  }
+
+  private async setInGame(on: boolean): Promise<void> {
+    this.localInGame = on;
+    this.publish({ inGame: on });
+  }
+
+  private hostRemovePlayer(userId: string): void {
+    const match = this.coopState?.get();
+    if (!match || match.hostId !== this.selfUserId) return;
+    if (match.phase === 'lobby') {
+      void this.coopState!.set({
+        ...match,
+        players: match.players.filter((p) => p.id !== userId),
+      });
+    }
+  }
+
+  private hostReceiveAnswer(
+    userId: string,
+    roundIndex: number,
+    roundSeq: number,
+    choice: number,
+  ): void {
+    const match = this.coopState?.get();
+    if (!match || match.hostId !== this.selfUserId) return;
+    if (match.phase !== 'playing') return;
+    if (match.roundIndex !== roundIndex || match.roundSeq !== roundSeq) return;
+    if (!match.alive[userId]) return;
+    if (!match.players.some((p) => p.id === userId)) return;
+
+    const round = match.rounds[match.roundIndex];
+    if (!round || choice < 0 || choice >= round.choices.length) return;
+
+    void this.coopState!.set({
+      ...match,
+      answers: { ...match.answers, [userId]: choice },
+    });
+  }
+
+  private ensureHostRoundWatch(match: CoopMatchSnapshot): void {
+    if (match.hostId !== this.selfUserId || match.phase !== 'playing') return;
+    if (this.roundTimer || this.advancing) return;
+    this.scheduleHostResolve(match);
+  }
+
+  private scheduleHostResolve(match: CoopMatchSnapshot): void {
+    this.clearRoundTimer();
+    const wait = Math.max(0, match.deadline - Date.now());
+    this.roundTimer = setTimeout(() => {
+      this.roundTimer = null;
+      const cur = this.coopState?.get();
+      if (!cur || cur.phase !== 'playing') return;
+      if (cur.roundSeq !== match.roundSeq) return;
+      this.hostBeginResolve(cur);
+    }, wait);
+  }
+
+  /** Tempo acabou: chãos caem e quem errou é eliminado. */
+  private hostBeginResolve(match: CoopMatchSnapshot): void {
+    if (this.advancing) return;
+    this.advancing = true;
+    this.clearRoundTimer();
+
+    const round = match.rounds[match.roundIndex];
+    if (!round || !this.coopState) {
+      this.advancing = false;
+      return;
+    }
+
+    const alive = { ...match.alive };
+    const scores = { ...match.scores };
+    for (const p of match.players) {
+      if (!alive[p.id]) continue;
+      const choice = match.answers[p.id] ?? -1;
+      const pick = choice >= 0 ? round.choices[choice] : null;
+      if (pick === round.answer) {
+        scores[p.id] = (scores[p.id] ?? 0) + 1;
+      } else {
+        alive[p.id] = false;
+      }
+    }
+
+    const resolving: CoopMatchSnapshot = {
+      ...match,
+      phase: 'resolving',
+      alive,
+      scores,
+    };
+    void this.coopState.set(resolving).finally(() => {
+      this.roundTimer = setTimeout(() => {
+        this.roundTimer = null;
+        this.hostAfterResolve(resolving);
+      }, COOP_RESOLVE_MS);
+    });
+  }
+
+  private hostAfterResolve(match: CoopMatchSnapshot): void {
+    if (!this.coopState) {
+      this.advancing = false;
+      return;
+    }
+
+    const survivors = match.players.filter((p) => match.alive[p.id]);
+    const solo = match.players.length < 2;
+
+    // Multi: sobrou 0 ou 1 → fim. Solo (treino): só acaba se caiu.
+    if (survivors.length === 0 || (!solo && survivors.length === 1)) {
+      void this.coopState
+        .set({
+          ...match,
+          phase: 'results',
+          winnerId: survivors[0]?.id ?? null,
+          answers: {},
+        })
+        .finally(() => {
+          this.advancing = false;
+        });
+      return;
+    }
+
+    const nextIndex = match.roundIndex + 1;
+    if (nextIndex >= match.rounds.length) {
+      // Acabou o pool: no multi vence o que mais sobreviveu; no solo não há vencedor.
+      let winnerId: string | null = null;
+      if (!solo) {
+        let best = -1;
+        for (const p of survivors) {
+          const s = match.scores[p.id] ?? 0;
+          if (s > best) {
+            best = s;
+            winnerId = p.id;
+          }
+        }
+      }
+      void this.coopState
+        .set({
+          ...match,
+          phase: 'results',
+          winnerId,
+          answers: {},
+        })
+        .finally(() => {
+          this.advancing = false;
+        });
+      return;
+    }
+
+    const answers: Record<string, number> = {};
+    for (const p of match.players) answers[p.id] = -1;
+    const roundMs = coopRoundMs(nextIndex);
+    const next: CoopMatchSnapshot = {
+      ...match,
+      phase: 'playing',
+      roundIndex: nextIndex,
+      roundSeq: match.roundSeq + 1,
+      answers,
+      roundMs,
+      deadline: Date.now() + roundMs,
+    };
+    void this.coopState.set(next).finally(() => {
+      this.advancing = false;
+      this.scheduleHostResolve(next);
+    });
+  }
+
+  private clearRoundTimer(): void {
+    if (this.roundTimer) {
+      clearTimeout(this.roundTimer);
+      this.roundTimer = null;
+    }
   }
 
   async setMicEnabled(on: boolean): Promise<boolean> {
@@ -285,14 +662,24 @@ export class LibraryRoom {
     const peerLevels = new Map<string, number>();
 
     for (const [userId, graph] of this.peerAudio) {
-      const pos = peerPositions.get(userId);
+      const peerGame = this.peerInGame.get(userId) ?? false;
       let vol = 0;
-      if (pos) {
-        const dx = pos.x - localX;
-        const dz = pos.z - localZ;
-        const dist = Math.hypot(dx, dz);
-        vol = proximityVolume(dist);
+
+      // Isolamento: quem joga só ouve quem joga; o resto da sala não ouve o jogo
+      if (this.localInGame !== peerGame) {
+        vol = 0;
+      } else if (this.localInGame) {
+        // Dentro do jogo — voz clara entre jogadores
+        vol = 1;
+      } else {
+        const pos = peerPositions.get(userId);
+        if (pos) {
+          const dx = pos.x - localX;
+          const dz = pos.z - localZ;
+          vol = proximityVolume(Math.hypot(dx, dz));
+        }
       }
+
       graph.gain.gain.value = vol;
       peerLevels.set(userId, vol > 0.02 ? rmsLevel(graph.analyser, graph.data) : 0);
     }
@@ -306,6 +693,9 @@ export class LibraryRoom {
   }
 
   async leave(): Promise<void> {
+    this.clearRoundTimer();
+    await this.leaveCoop().catch(() => undefined);
+
     for (const u of this.unsubs) {
       try {
         u();
@@ -333,6 +723,10 @@ export class LibraryRoom {
       this.micStream = null;
     }
     this.micEnabled = false;
+    this.localInGame = false;
+    this.peerInGame.clear();
+    this.answerAction = null;
+    this.coopState = null;
 
     if (this.audioCtx) {
       void this.audioCtx.close().catch(() => undefined);

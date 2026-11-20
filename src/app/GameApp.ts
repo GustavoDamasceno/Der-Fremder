@@ -84,6 +84,7 @@ export class GameApp {
       onSecretDialogue: () => this.ui.startSecretDialogue(),
       onLibraryJoin: (name, code) => this.completeLibraryJoin(name, code),
       onLibraryJoinCancel: () => this.cancelLibraryJoin(),
+      onLibraryCoop: () => this.startLibraryCoop(),
     });
     this.ui.setTouch(this.touch);
 
@@ -217,7 +218,7 @@ export class GameApp {
         this.world.setSynagogueMode(true);
         this.player.setPosition(this.world.spawnInsideSynagogue());
         this.player.facing = 0;
-        this.player.setIndoor(true);
+        this.player.setIndoor(true, 'synagogue');
         this.player.snapCamera();
         SoundManager.get().setTrack('shul');
       }
@@ -232,12 +233,16 @@ export class GameApp {
         this.player.setIndoor(false);
         this.player.snapCamera();
         SoundManager.get().setTrack('shtetl');
+        this.interactBlocked = true;
+        this.eHeld = true;
       } else {
         this.world.setSchoolMode(true);
         this.player.setPosition(this.world.spawnInsideSchool());
         this.player.facing = 0;
-        this.player.setIndoor(true);
+        this.player.setIndoor(true, 'school');
         this.player.snapCamera();
+        this.interactBlocked = true;
+        this.eHeld = true;
       }
       return;
     }
@@ -281,6 +286,9 @@ export class GameApp {
         },
         onError: (message) => {
           this.ui.setHint(message);
+        },
+        onCoopMatch: (match) => {
+          this.ui.applyCoopMatch(match);
         },
       });
 
@@ -327,7 +335,16 @@ export class GameApp {
     );
   }
 
+  private startLibraryCoop(): void {
+    if (!this.libraryRoom.isConnected || !this.world.isInLibraryScene()) return;
+    if (this.ui.isInCoop()) return;
+    this.ui.startCoopFall(this.libraryRoom);
+  }
+
   private async exitLibrarySession(returnOutside: boolean): Promise<void> {
+    if (this.ui.isInCoop()) {
+      this.ui.applyCoopMatch(null);
+    }
     this.libraryPresence.clear();
     await this.libraryRoom.leave();
     this.ui.hideLibraryHud();

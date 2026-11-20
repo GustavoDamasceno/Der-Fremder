@@ -11,6 +11,9 @@ import { GP, type GamepadInput } from '../input/GamepadInput';
 import type { TouchControls } from '../input/TouchControls';
 import { SoundManager } from '../audio/SoundManager';
 import { PracticeMinigame } from './PracticeMinigame';
+import { CoopFallGame } from './CoopFallGame';
+import type { LibraryRoom } from '../net/LibraryRoom';
+import type { CoopMatchSnapshot } from '../net/coopTypes';
 
 const ENDINGS: Record<
   EndingId,
@@ -53,7 +56,8 @@ export type UiMode =
   | 'gameOver'
   | 'ending'
   | 'secretEnd'
-  | 'libraryJoin';
+  | 'libraryJoin'
+  | 'coop';
 
 type Handlers = {
   onStartGame: (opts?: { mobile?: boolean }) => void;
@@ -64,6 +68,7 @@ type Handlers = {
   onSecretDialogue: () => void;
   onLibraryJoin?: (name: string, code: string) => void | Promise<void>;
   onLibraryJoinCancel?: () => void;
+  onLibraryCoop?: () => void;
 };
 
 export class UiController {
@@ -82,6 +87,7 @@ export class UiController {
   private uiConfirmHeld = false;
   private pendingPractice: PracticeTopic | null = null;
   private practiceGame: PracticeMinigame | null = null;
+  private coopGame: CoopFallGame | null = null;
 
   private screenEl!: HTMLElement;
   private hudEl!: HTMLElement;
@@ -163,6 +169,7 @@ export class UiController {
       </div>
       <div class="library-hud hidden panel" id="library-hud">
         <span id="library-room-info">Sala · 1/10</span>
+        <button type="button" class="btn btn-coop" id="library-coop-btn">Chão que Cai</button>
       </div>
       <div class="screen" id="screen"></div>
     `;
@@ -181,6 +188,9 @@ export class UiController {
 
     this.$('library-join-btn').addEventListener('click', () => void this.submitLibraryJoin());
     this.$('library-cancel-btn').addEventListener('click', () => this.cancelLibraryJoin());
+    this.$('library-coop-btn').addEventListener('click', () => {
+      this.handlers.onLibraryCoop?.();
+    });
     for (const id of ['library-name', 'library-code'] as const) {
       const input = this.$(id) as HTMLInputElement;
       input.addEventListener('keydown', (e) => {
@@ -218,6 +228,12 @@ export class UiController {
 
       if (this.mode === 'practice' && this.practiceGame) {
         if (this.practiceGame.handleKey(e.code)) {
+          e.preventDefault();
+          return;
+        }
+      }
+      if (this.mode === 'coop' && this.coopGame) {
+        if (this.coopGame.handleKey(e.code)) {
           e.preventDefault();
           return;
         }
@@ -807,6 +823,32 @@ E o shtetl inteiro sorri.</p>
     this.$('library-room-info').textContent = `Sala: ${code} · ${count}/10`;
   }
 
+  startCoopFall(room: LibraryRoom): void {
+    this.mode = 'coop';
+    this.hintEl.classList.add('hidden');
+    this.libraryHudEl.classList.add('hidden');
+    this.coopGame?.destroy();
+    this.coopGame = new CoopFallGame(this.practiceEl, room, () => {
+      this.coopGame = null;
+      this.mode = 'playing';
+      this.screenEl.classList.add('hidden');
+      this.hudEl.classList.remove('hidden');
+      // Biblioteca: música permanece pausada
+      SoundManager.get().pause();
+      if (room.isConnected) {
+        this.showLibraryHud(room.roomCode, room.playerCount);
+      }
+    });
+  }
+
+  applyCoopMatch(match: CoopMatchSnapshot | null): void {
+    this.coopGame?.applyMatch(match);
+  }
+
+  isInCoop(): boolean {
+    return this.mode === 'coop';
+  }
+
   private async submitLibraryJoin(): Promise<void> {
     if (this.mode !== 'libraryJoin' || this.libraryJoinBusy) return;
     const name = (this.$('library-name') as HTMLInputElement).value;
@@ -840,6 +882,8 @@ E o shtetl inteiro sorri.</p>
     this.libraryHudEl?.classList.add('hidden');
     this.practiceGame?.destroy();
     this.practiceGame = null;
+    this.coopGame?.destroy();
+    this.coopGame = null;
     this.lockHintEl.classList.add('hidden');
     this.crosshairEl.classList.add('hidden');
   }

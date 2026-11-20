@@ -133,3 +133,64 @@ export function buildArcadeRounds(
     };
   });
 }
+
+/**
+ * Chão que Cai cooperativo — mistura pronomes, verbos e números.
+ * Reutiliza o pool se `count` for maior que o vocabulário.
+ * Depois da 10ª / 20ª pergunta aumenta o número de opções.
+ */
+export function buildMixedFallRounds(count = 40, nChoices = 3): ArcadeRound[] {
+  const tagged: { topic: PracticeTopic; item: PracticePair }[] = [
+    ...PRONOUNS.map((item) => ({ topic: 'pronouns' as const, item })),
+    ...VERBS.map((item) => ({ topic: 'verbs' as const, item })),
+    ...NUMBERS.map((item) => ({ topic: 'numbers' as const, item })),
+  ];
+  const out: ArcadeRound[] = [];
+  let bag = shuffle(tagged);
+
+  while (out.length < count) {
+    if (bag.length === 0) bag = shuffle(tagged);
+    const entry = bag.pop()!;
+    const { topic, item } = entry;
+    const i = out.length;
+    const choicesN = Math.min(
+      i < 10 ? nChoices : i < 20 ? Math.max(nChoices, 3) : 4,
+      poolFor(topic).length,
+    );
+    const pool = poolFor(topic);
+    const yiToPt = i % 2 === 0;
+    if (yiToPt) {
+      out.push({
+        prompt: item.yi,
+        sub:
+          topic === 'numbers'
+            ? 'Qual número?'
+            : topic === 'verbs'
+              ? 'O que significa?'
+              : 'Quem é?',
+        answer: item.pt,
+        choices: shuffle([
+          item.pt,
+          ...shuffle(pool.filter((p) => p.yi !== item.yi))
+            .slice(0, choicesN - 1)
+            .map((p) => p.pt),
+        ]),
+        learn: { yiddish: item.yi, portuguese: item.pt },
+      });
+    } else {
+      out.push({
+        prompt: item.pt,
+        sub: 'Como se diz em iídiche?',
+        answer: item.yi,
+        choices: shuffle([
+          item.yi,
+          ...shuffle(pool.filter((p) => p.yi !== item.yi))
+            .slice(0, choicesN - 1)
+            .map((p) => p.yi),
+        ]),
+        learn: { yiddish: item.yi, portuguese: item.pt },
+      });
+    }
+  }
+  return out;
+}

@@ -262,7 +262,7 @@ export const soraChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Sora',
       yiddish: 'Mame… tate…',
-      portuguese: 'Ela aponta para uma casa e faz dois gestos com a mão.',
+      portuguese: 'Ela aponta para uma casa e faz dois gestos com a mão — sem explicar as palavras.',
       prompt: 'O que significam mame e tate?',
       next: 'q2',
       options: [
@@ -301,7 +301,7 @@ export const soraChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Sora',
       yiddish: 'Ikh vil esn. Ikh vil trinken.',
-      portuguese: 'Ela faz de conta que come e bebe.',
+      portuguese: 'Ela faz gestos rápidos e espera você ligar às palavras.',
       prompt: 'O que significam esn e trinken?',
       options: [
         {
@@ -429,7 +429,7 @@ export const dinaChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Dina',
       yiddish: 'Ikh hob gelt.',
-      portuguese: 'Ela mostra uma moeda e bate de leve no peito.',
+      portuguese: 'Ela mostra um objeto pequeno e bate de leve no peito.',
       prompt: 'O que significa gelt?',
       next: 'q2',
       options: [
@@ -509,7 +509,7 @@ export const hazanChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Hazan Hersh',
       yiddish: 'Dos iz di shul.',
-      portuguese: 'Ele abre os braços, mostrando o salão da sinagoga.',
+      portuguese: 'Ele abre os braços, orgulhoso do lugar, e espera a palavra.',
       prompt: 'O que significa shul?',
       next: 'q2',
       options: [
@@ -545,8 +545,8 @@ export const hazanChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Hazan Hersh',
       yiddish: 'Dos iz a tallis.',
-      portuguese: 'Ele toca as faixas brancas do talit nos ombros.',
-      prompt: 'O que é um tallis (talit)?',
+      portuguese: 'Ele puxa o tecido nos ombros e espera você nomear.',
+      prompt: 'O que é um tallis?',
       options: [
         {
           text: 'Xale de oração',
@@ -631,8 +631,8 @@ export const avromChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Avrom',
       yiddish: 'Der aron… di toyre.',
-      portuguese: 'Ele aponta o armário sagrado com respeito.',
-      prompt: 'O que é a toyre (Torá)?',
+      portuguese: 'Ele aponta o armário à frente com respeito.',
+      prompt: 'O que é a toyre?',
       options: [
         {
           text: 'A Torá / o pergaminho sagrado',
@@ -677,7 +677,7 @@ export const meyerChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Meyer',
       yiddish: 'Mir hobn a minyan.',
-      portuguese: 'Ele conta os homens nos bancos com o dedo.',
+      portuguese: 'Ele conta gente nos bancos com o dedo e espera a palavra.',
       prompt: 'O que é um minyan?',
       options: [
         {
@@ -763,7 +763,7 @@ export const velvlChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Velvl',
       yiddish: 'In mayn siddur.',
-      portuguese: 'Ele mostra o livro de orações aberto no colo.',
+      portuguese: 'Ele ergue o livro aberto no colo e espera.',
       prompt: 'O que é um siddur?',
       options: [
         {
@@ -892,8 +892,8 @@ export const khayimChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Khayim',
       yiddish: 'Di bime.',
-      portuguese: 'Ele aponta a plataforma no meio da shul.',
-      prompt: 'O que é a bime (bimá)?',
+      portuguese: 'Ele aponta a plataforma no meio do salão.',
+      prompt: 'O que é a bime?',
       options: [
         {
           text: 'A plataforma / púlpito da sinagoga',
@@ -935,7 +935,7 @@ export const ravChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Reb Yankl',
       yiddish: 'Dos iz a sefer toyre.',
-      portuguese: 'Ele segura o rolo com as duas mãos e o ergue um pouco.',
+      portuguese: 'Ele segura o rolo com as duas mãos e o ergue um pouco, em silêncio.',
       prompt: 'O que é um sefer toyre?',
       next: 'q2',
       options: [
@@ -1014,7 +1014,7 @@ export const soykerChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Itsik der Soykher',
       yiddish: 'Kum tsum mark!',
-      portuguese: 'Ele abre os braços mostrando as barracas.',
+      portuguese: 'Ele abre os braços mostrando o movimento ao redor.',
       prompt: 'O que é o mark?',
       next: 'q2',
       options: [
@@ -1093,7 +1093,7 @@ export const rokhelChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Rokhel',
       yiddish: 'Dos iz frukht.',
-      portuguese: 'Ela mostra a cesta cheia de frutas.',
+      portuguese: 'Ela ergue a cesta e espera a palavra.',
       prompt: 'O que é frukht?',
       options: [
         {
@@ -1136,7 +1136,7 @@ export const feldsherChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Dr. Moyshe',
       yiddish: 'Dos iz der shpitol.',
-      portuguese: 'Ele aponta a clínica branca com a cruz vermelha.',
+      portuguese: 'Ele aponta o prédio branco ao lado e espera.',
       prompt: 'O que é um shpitol?',
       options: [
         {
@@ -1179,8 +1179,8 @@ export const melamedChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Reb Aron',
       yiddish: 'Dos iz a kheyder.',
-      portuguese: 'Ele toca a placa da escola e olha para você.',
-      prompt: 'O que é um kheyder (cheder)?',
+      portuguese: 'Ele toca a placa na fachada e olha para você.',
+      prompt: 'O que é um kheyder?',
       options: [
         {
           text: 'Escola / aula de crianças',
@@ -1222,7 +1222,7 @@ export const shnayderChat: DialogueTree = {
       kind: 'recognition',
       speaker: 'Hershl der Shnayder',
       yiddish: 'Ikh bin a shnayder.',
-      portuguese: 'Ele mostra a agulha e o tecido na oficina.',
+      portuguese: 'Ele ergue a ferramenta e o pano, esperando o nome do ofício.',
       prompt: 'O que é um shnayder?',
       options: [
         {
@@ -1370,6 +1370,189 @@ export const motlChat: DialogueTree = {
           text: 'Um livro',
           correct: false,
           reaction: '“Neyn…”',
+          suspicionDelta: 12,
+        },
+      ],
+    },
+  },
+};
+
+/** Aluno perto da escola — pergunta sobre números. */
+export const itsikChat: DialogueTree = {
+  id: 'itsik-numbers',
+  encounterTitle: 'Itsik quer falar com você!',
+  startId: 'intro',
+  turns: {
+    intro: {
+      id: 'intro',
+      kind: 'narration',
+      speaker: 'Itsik',
+      yiddish: 'Eyns, tsvey, dray… hey!',
+      portuguese:
+        'Um menino conta nos dedos perto da escola. Ele te testa com números.',
+      next: 'q1',
+    },
+    q1: {
+      id: 'q1',
+      kind: 'recognition',
+      speaker: 'Itsik',
+      yiddish: 'Vos iz “dray”?',
+      portuguese: 'Itsik ergue a mão e espera você traduzir a palavra.',
+      prompt: 'O que significa dray?',
+      next: 'q2',
+      options: [
+        {
+          text: 'Três',
+          correct: true,
+          reaction: '“Yo! Dray!” Itsik ri alto.',
+          suspicionDelta: -3,
+          learn: [{ yiddish: 'dray', portuguese: 'três (3)' }],
+        },
+        {
+          text: 'Dois',
+          correct: false,
+          reaction: '“Neyn! Dos iz tsvey.” Ele franze a testa.',
+          suspicionDelta: 8,
+          learn: [{ yiddish: 'tsvey', portuguese: 'dois (2)' }],
+        },
+        {
+          text: 'Cinco',
+          correct: false,
+          reaction: '“Finf? Ha! Du bist a fremder!”',
+          suspicionDelta: 10,
+        },
+        {
+          text: 'Dez',
+          correct: false,
+          reaction: 'Itsik balança a cabeça. “Tsen iz tsen. Dos iz dray.”',
+          suspicionDelta: 10,
+        },
+      ],
+    },
+    q2: {
+      id: 'q2',
+      kind: 'response',
+      speaker: 'Itsik',
+      yiddish: 'Zog: finf!',
+      portuguese: 'Agora ele aponta o caderno e espera você repetir a palavra dele.',
+      prompt: 'Qual destas é a palavra que Itsik pediu?',
+      options: [
+        {
+          text: 'Finf.',
+          correct: true,
+          reaction: '“Gut! Finf!” Itsik corre embora contando.',
+          suspicionDelta: -3,
+          learn: [{ yiddish: 'finf', portuguese: 'cinco (5)' }],
+        },
+        {
+          text: 'Fir.',
+          correct: false,
+          partial: true,
+          reaction: '“Fir iz 4… ober finf iz 5!”',
+          suspicionDelta: 4,
+          learn: [{ yiddish: 'fir', portuguese: 'quatro (4)' }],
+        },
+        {
+          text: 'Zeks.',
+          correct: false,
+          reaction: '“Zeks? Neyn…” Ele torce o nariz.',
+          suspicionDelta: 8,
+        },
+        {
+          text: 'Five.',
+          correct: false,
+          reaction: '“English? Neyn. Do redt men yidish.”',
+          suspicionDelta: 12,
+        },
+      ],
+    },
+  },
+};
+
+/** Aluna perto da escola — pergunta sobre verbos. */
+export const goldeChat: DialogueTree = {
+  id: 'golde-verbs',
+  encounterTitle: 'Golde quer falar com você!',
+  startId: 'intro',
+  turns: {
+    intro: {
+      id: 'intro',
+      kind: 'narration',
+      speaker: 'Golde',
+      yiddish: 'Geyn, kumen, redn…',
+      portuguese:
+        'Uma menina repete verbos em voz baixa. Ao te ver, ela quer saber se você entende.',
+      next: 'q1',
+    },
+    q1: {
+      id: 'q1',
+      kind: 'recognition',
+      speaker: 'Golde',
+      yiddish: 'Vos iz “redn”?',
+      portuguese: 'Golde para de murmurar e te olha, à espera de uma tradução.',
+      prompt: 'O que significa redn?',
+      next: 'q2',
+      options: [
+        {
+          text: 'Falar',
+          correct: true,
+          reaction: '“Yo! Mir redn yidish.” Golde sorri.',
+          suspicionDelta: -3,
+          learn: [{ yiddish: 'redn', portuguese: 'falar' }],
+        },
+        {
+          text: 'Correr',
+          correct: false,
+          reaction: '“Neyn… loyfn iz loyfn. Redn iz redn.”',
+          suspicionDelta: 8,
+        },
+        {
+          text: 'Comer',
+          correct: false,
+          reaction: 'Ela ri. “Esn? Neyn!”',
+          suspicionDelta: 10,
+        },
+        {
+          text: 'Dormir',
+          correct: false,
+          reaction: '“Shlofn? Du bist mid?” Ela desconfia.',
+          suspicionDelta: 10,
+        },
+      ],
+    },
+    q2: {
+      id: 'q2',
+      kind: 'response',
+      speaker: 'Golde',
+      yiddish: 'Zog: ikh gey…',
+      portuguese: 'Ela começa a frase e espera você completar com o verbo certo.',
+      prompt: 'Qual verbo completa o que ela disse?',
+      options: [
+        {
+          text: 'Geyn.',
+          correct: true,
+          reaction: '“Gut! Ikh gey tsu der shul.” Ela acena e segue.',
+          suspicionDelta: -3,
+          learn: [{ yiddish: 'geyn', portuguese: 'ir' }],
+        },
+        {
+          text: 'Kumen.',
+          correct: false,
+          partial: true,
+          reaction: '“Kumen iz ‘vir’… geyn iz ‘ir’.”',
+          suspicionDelta: 4,
+          learn: [{ yiddish: 'kumen', portuguese: 'vir' }],
+        },
+        {
+          text: 'Hobn.',
+          correct: false,
+          reaction: '“Hobn iz ‘ter’. Neyn.”',
+          suspicionDelta: 8,
+        },
+        {
+          text: 'To go.',
+          correct: false,
+          reaction: 'Golde aperta os olhos. “Nisht english.”',
           suspicionDelta: 12,
         },
       ],

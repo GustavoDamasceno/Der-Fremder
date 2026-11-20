@@ -29,12 +29,44 @@ export class FixedCameraPlayer {
   /** Offset da câmera no shtetl (mundo aberto). */
   private readonly camOffsetOutdoor = new THREE.Vector3(0, 14, 16);
   private readonly camOffsetMounted = new THREE.Vector3(0, 16, 18);
-  /** Offset da câmera na sinagoga (sala fechada — mais baixa e perto). */
-  private readonly camOffsetIndoor = new THREE.Vector3(-3.2, 4.2, 3.8);
+  /** Offset da câmera em interiores (sala fechada — mais baixa e perto). */
+  private readonly camOffsetIndoor = new THREE.Vector3(-2.6, 3.8, 3.2);
   /** Limites para a câmera não atravessar as paredes (interiores). */
-  private indoorCamBounds = { min: -11.5, max: 11.5, yMin: 2.6, yMax: 6.8 };
-  private readonly indoorCamBoundsDefault = { min: -11.5, max: 11.5, yMin: 2.6, yMax: 6.8 };
-  private readonly indoorCamBoundsLibrary = { min: -14.5, max: 14.5, yMin: 2.8, yMax: 7.5 };
+  private indoorCamBounds = {
+    xMin: -5.8,
+    xMax: 5.8,
+    zMin: -5.8,
+    zMax: 5.8,
+    yMin: 2.4,
+    yMax: 5.6,
+  };
+  /** Sinagoga 14×14 — câmera precisa ficar DENTRO das paredes. */
+  private readonly indoorCamBoundsShul = {
+    xMin: -5.8,
+    xMax: 5.8,
+    zMin: -5.8,
+    zMax: 5.8,
+    yMin: 2.4,
+    yMax: 5.6,
+  };
+  /** Escola 20×18 */
+  private readonly indoorCamBoundsSchool = {
+    xMin: -8.5,
+    xMax: 8.5,
+    zMin: -7.5,
+    zMax: 7.5,
+    yMin: 2.5,
+    yMax: 5.8,
+  };
+  /** Biblioteca 32×28 */
+  private readonly indoorCamBoundsLibrary = {
+    xMin: -14.0,
+    xMax: 14.0,
+    zMin: -12.0,
+    zMax: 12.0,
+    yMin: 2.8,
+    yMax: 7.2,
+  };
   private indoor = false;
   private gamepad: GamepadInput | null = null;
   private touch: TouchControls | null = null;
@@ -62,10 +94,14 @@ export class FixedCameraPlayer {
     this.touch = touch;
   }
 
-  setIndoor(indoor: boolean, kind: 'default' | 'library' = 'default'): void {
+  setIndoor(
+    indoor: boolean,
+    kind: 'synagogue' | 'school' | 'library' | 'default' = 'default',
+  ): void {
     this.indoor = indoor;
-    this.indoorCamBounds =
-      kind === 'library' ? { ...this.indoorCamBoundsLibrary } : { ...this.indoorCamBoundsDefault };
+    if (kind === 'library') this.indoorCamBounds = { ...this.indoorCamBoundsLibrary };
+    else if (kind === 'school') this.indoorCamBounds = { ...this.indoorCamBoundsSchool };
+    else this.indoorCamBounds = { ...this.indoorCamBoundsShul };
     this.snapCamera();
   }
 
@@ -91,9 +127,9 @@ export class FixedCameraPlayer {
   private clampCam(p: THREE.Vector3): THREE.Vector3 {
     if (!this.indoor) return p;
     const b = this.indoorCamBounds;
-    p.x = THREE.MathUtils.clamp(p.x, b.min, b.max);
+    p.x = THREE.MathUtils.clamp(p.x, b.xMin, b.xMax);
     p.y = THREE.MathUtils.clamp(p.y, b.yMin, b.yMax);
-    p.z = THREE.MathUtils.clamp(p.z, b.min, b.max);
+    p.z = THREE.MathUtils.clamp(p.z, b.zMin, b.zMax);
     return p;
   }
 

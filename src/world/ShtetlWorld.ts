@@ -1176,7 +1176,7 @@ export class ShtetlWorld {
   private readonly cows: GrazingCow[] = [];
   private grass: DynamicGrass | null = null;
   /** Fachada da escola (mundo aberto) — para spawn ao sair. */
-  private schoolDoorPos = new THREE.Vector3(-36, 0, -1.5);
+  private schoolDoorPos = new THREE.Vector3(-46, 0, -6);
   private libraryDoorPos = new THREE.Vector3(44, 0, -18);
   /** Cavalo montável do celeiro. */
   private rideable: RideableHorse | null = null;
@@ -1344,6 +1344,8 @@ export class ShtetlWorld {
     addPath(7, 22, 0, 36);
     // Rua leste–oeste central
     addPath(80, 8, 0, 0);
+    // Prolongamento oeste (até a escola do Leyzer)
+    addPath(22, 7, -50, 0);
     // Prolongamento leste (em direção ao celeiro / biblioteca)
     addPath(36, 7, 48, 0);
     // Rua leste do pasto — contorna o celeiro por fora até a biblioteca
@@ -1494,28 +1496,34 @@ export class ShtetlWorld {
     const ceiling = box(w, 0.2, d, 0x5a4a38, 0, h, 0);
     add(ceiling);
 
-    // Quatro paredes opacas
+    // Quatro paredes opacas (DoubleSide evita “buraco cinza” se a câmera encostar)
     const wallS = box(w, h, t, 0xe8dcc8, 0, h / 2, -d / 2 + t / 2);
     const wallN = box(w, h, t, 0xe8dcc8, 0, h / 2, d / 2 - t / 2);
     const wallW = box(t, h, d, 0xe0d4bc, -w / 2 + t / 2, h / 2, 0);
     const wallE = box(t, h, d, 0xe0d4bc, w / 2 - t / 2, h / 2, 0);
-    add(wallS);
-    add(wallN);
-    add(wallW);
-    add(wallE);
-    this.addCollider(0, -d / 2 + t / 2, w + 0.4, t + 0.5);
-    this.addCollider(0, d / 2 - t / 2, w + 0.4, t + 0.5);
-    this.addCollider(-w / 2 + t / 2, 0, t + 0.5, d + 0.4);
-    this.addCollider(w / 2 - t / 2, 0, t + 0.5, d + 0.4);
+    for (const wall of [wallS, wallN, wallW, wallE]) {
+      (wall.material as THREE.Material).side = THREE.DoubleSide;
+      add(wall);
+    }
+    // Casca externa — se a câmera passar um pouco da parede, ainda vê madeira (não o void)
+    add(box(w + 0.6, h + 0.2, 0.35, 0xd4c8b0, 0, h / 2, d / 2 + 0.2));
+    add(box(w + 0.6, h + 0.2, 0.35, 0xd4c8b0, 0, h / 2, -d / 2 - 0.2));
+    add(box(0.35, h + 0.2, d + 0.6, 0xd4c8b0, w / 2 + 0.2, h / 2, 0));
+    add(box(0.35, h + 0.2, d + 0.6, 0xd4c8b0, -w / 2 - 0.2, h / 2, 0));
+
+    this.addCollider(0, -d / 2 + t / 2, w + 0.4, t + 0.7);
+    this.addCollider(0, d / 2 - t / 2, w + 0.4, t + 0.7);
+    this.addCollider(-w / 2 + t / 2, 0, t + 0.7, d + 0.4);
+    this.addCollider(w / 2 - t / 2, 0, t + 0.7, d + 0.4);
 
     // Faixa de madeira
     add(box(w - 0.2, 0.15, 0.08, COLORS.wood, 0, 1.0, d / 2 - t - 0.05));
     add(box(w - 0.2, 0.15, 0.08, COLORS.wood, 0, 1.0, -d / 2 + t + 0.05));
 
     // Estante de sefarim na parede norte (oposta à porta)
-    const bookcaseZ = d / 2 - t - 0.35;
+    const bookcaseZ = d / 2 - t - 0.45;
     add(makeBookcase(0, bookcaseZ, 4.4));
-    this.addOrientedBox(0, bookcaseZ, 4.6, 0.55, 0);
+    this.addOrientedBox(0, bookcaseZ, 4.6, 0.7, 0);
 
     // Janelas internas (vitral) — só decoração, parede continua fechada
     for (const wz of [-3, 3] as const) {
@@ -2073,74 +2081,98 @@ export class ShtetlWorld {
   }
 
   /**
-   * Fachada da escola do Reb Leyzer — fim oeste da rua horizontal.
+   * Fachada da escola do Reb Leyzer — entrada ornada (estilo da biblioteca).
    * Interior é cenário próprio (como a sinagoga).
    */
   private buildLeyzerSchool(x: number, z: number): void {
     const w = 12;
     const d = 10;
-    const h = 4.6;
-    const bookColors = [0x6e2e22, 0x2a3a5a, 0x3a5a3a, 0x5a3a2a, 0x4a2a4a, 0x2a2a28, 0x8a5030];
+    const h = 5.0;
 
-    this.scene.add(box(w, h, d, 0xf2e8d4, x, h / 2, z));
-    this.scene.add(box(w + 0.08, 0.22, d + 0.08, COLORS.wood, x, 1.05, z));
-    this.scene.add(box(w + 0.7, 0.42, d + 0.7, 0x2f5f4a, x, h + 0.2, z));
-    this.scene.add(box(w * 0.38, 0.55, d + 0.25, 0x244a3a, x, h + 0.55, z));
-    this.addCollider(x, z, w + 0.8, d + 0.8);
-
-    const doorZ = z + d / 2 + 0.06;
-    // Porta grande (entrada)
-    this.scene.add(box(1.7, 2.45, 0.12, COLORS.wood, x, 1.22, doorZ));
-    this.scene.add(box(0.12, 0.12, 0.1, COLORS.gold, x + 0.55, 1.25, doorZ + 0.08));
-    this.scene.add(makeMezuzah(x + 0.95, 1.85, doorZ + 0.05));
-
-    // Janelas laterais
-    for (const sx of [-3.6, 3.6] as const) {
-      this.scene.add(box(1.8, 1.5, 0.1, COLORS.wood, x + sx, 2.2, doorZ));
-      this.scene.add(box(1.55, 1.25, 0.06, 0x9ec8e0, x + sx, 2.2, doorZ + 0.05));
-      for (let i = 0; i < 6; i++) {
-        const c = bookColors[(i + (sx > 0 ? 2 : 0)) % bookColors.length]!;
-        const bh = 0.3 + (i % 3) * 0.05;
+    // Base de pedra + corpo creme
+    this.scene.add(box(w + 1.1, 0.5, d + 1.1, COLORS.stone, x, 0.25, z));
+    this.scene.add(box(w, h, d, 0xf5ecd8, x, h / 2 + 0.5, z));
+    // Cantoneiras
+    for (const sx of [-1, 1] as const) {
+      for (const sz of [-1, 1] as const) {
         this.scene.add(
-          box(0.12, bh, 0.16, c, x + sx - 0.55 + i * 0.22, 1.75 + bh / 2, doorZ + 0.1),
+          box(0.4, h + 0.25, 0.4, 0xe8dcc0, x + sx * (w / 2 - 0.12), h / 2 + 0.5, z + sz * (d / 2 - 0.12)),
         );
       }
     }
+    // Faixa dourada
+    this.scene.add(box(w + 0.15, 0.16, d + 0.15, COLORS.gold, x, 2.05, z));
+    // Telhado verde do kheyder
+    this.scene.add(box(w + 1.2, 0.42, d + 1.2, 0x2f5f4a, x, h + 0.7, z));
+    this.scene.add(box(w * 0.4, 0.5, d + 0.4, 0x244a3a, x, h + 1.05, z));
+    this.scene.add(box(w * 0.14, 0.18, d + 0.15, COLORS.gold, x, h + 1.32, z));
+    this.addCollider(x, z, w + 0.9, d + 0.9);
 
-    // Placa Kheyder
-    this.scene.add(box(3.4, 0.65, 0.12, 0x2a4a3a, x, 3.85, doorZ + 0.16));
-    this.scene.add(box(3.05, 0.42, 0.08, 0xf0e6d0, x, 3.85, doorZ + 0.22));
+    const doorZ = z + d / 2 + 0.08;
+    // Escadaria (só visual — sem collider, pra não travar o spawn ao sair)
+    this.scene.add(box(4.8, 0.26, 1.5, COLORS.stone, x, 0.18, doorZ + 0.85));
+    this.scene.add(box(4.0, 0.26, 1.0, COLORS.stoneDark, x, 0.42, doorZ + 0.4));
 
-    // Bancada de livros na frente (sem bloquear a porta)
-    const bx = x + 3.6;
-    const bz = doorZ + 2.0;
-    this.scene.add(box(3.2, 0.1, 1.8, COLORS.wood, bx, 2.2, bz));
-    this.scene.add(box(3.4, 0.08, 2.0, 0xc9a227, bx, 2.3, bz));
-    this.scene.add(box(3.0, 0.12, 1.1, COLORS.woodLight, bx, 1.0, bz + 0.1));
-    this.scene.add(box(2.9, 0.85, 0.12, COLORS.wood, bx, 0.48, bz + 0.55));
-    this.addOrientedBox(bx, bz, 3.2, 2.0, 0);
-    for (let i = 0; i < 8; i++) {
-      const c = bookColors[i % bookColors.length]!;
-      const bh = 0.28 + (i % 3) * 0.05;
-      this.scene.add(box(0.1, bh, 0.2, c, bx - 1.1 + i * 0.28, 1.12 + bh / 2, bz + 0.15));
+    // Colunas da entrada
+    for (const sx of [-1.5, 1.5] as const) {
+      this.scene.add(cyl(0.2, 0.24, 3.2, 0xf5ecd8, x + sx, 2.2, doorZ + 0.12, 10));
+      this.scene.add(box(0.5, 0.16, 0.5, COLORS.gold, x + sx, 3.85, doorZ + 0.12));
+      this.scene.add(box(0.5, 0.16, 0.5, COLORS.stone, x + sx, 0.65, doorZ + 0.12));
+    }
+    // Frontão + estrela
+    this.scene.add(box(4.2, 0.22, 0.65, 0x2f5f4a, x, 4.15, doorZ + 0.08));
+    this.scene.add(box(3.3, 0.65, 0.14, 0xfff8e8, x, 4.55, doorZ + 0.18));
+    const star = makeStarOfDavid(0.48, COLORS.gold);
+    star.position.set(x, 4.55, doorZ + 0.3);
+    this.scene.add(star);
+
+    // Porta dupla ornamentada
+    this.scene.add(box(1.9, 2.55, 0.14, 0x5a3a22, x, 1.75, doorZ));
+    this.scene.add(box(0.08, 2.35, 0.06, COLORS.gold, x, 1.75, doorZ + 0.08));
+    this.scene.add(box(0.14, 0.14, 0.1, COLORS.gold, x + 0.65, 1.75, doorZ + 0.1));
+    this.scene.add(box(0.14, 0.14, 0.1, COLORS.gold, x - 0.65, 1.75, doorZ + 0.1));
+    this.scene.add(makeMezuzah(x + 1.1, 2.55, doorZ + 0.06));
+
+    // Janelas com vitral + floreiras
+    for (const sx of [-3.8, 3.8] as const) {
+      this.scene.add(box(1.9, 2.0, 0.12, COLORS.wood, x + sx, 2.45, doorZ));
+      this.scene.add(box(1.6, 1.7, 0.08, 0x7eb6a0, x + sx, 2.45, doorZ + 0.05));
+      this.scene.add(box(0.08, 1.7, 0.06, COLORS.gold, x + sx, 2.45, doorZ + 0.1));
+      this.scene.add(box(1.6, 0.08, 0.06, COLORS.gold, x + sx, 2.45, doorZ + 0.1));
+      this.scene.add(box(2.0, 0.32, 0.5, COLORS.woodLight, x + sx, 1.25, doorZ + 0.22));
+      this.scene.add(cyl(0.07, 0.08, 0.11, 0xc45c3a, x + sx - 0.35, 1.48, doorZ + 0.22, 6));
+      this.scene.add(cyl(0.07, 0.08, 0.11, 0xe08030, x + sx, 1.48, doorZ + 0.22, 6));
+      this.scene.add(cyl(0.07, 0.08, 0.11, 0x6a3a8a, x + sx + 0.35, 1.48, doorZ + 0.22, 6));
     }
 
-    // Caminho até a rua horizontal
+    // Placa Kheyder
+    this.scene.add(box(3.6, 0.65, 0.12, 0x2a4a3a, x, 3.4, doorZ + 0.18));
+    this.scene.add(box(3.2, 0.42, 0.08, 0xf0e6d0, x, 3.4, doorZ + 0.24));
+
+    // Lanternas
+    for (const sx of [-2.4, 2.4] as const) {
+      this.scene.add(cyl(0.06, 0.06, 1.3, COLORS.wood, x + sx, 1.4, doorZ + 1.4, 6));
+      this.scene.add(box(0.32, 0.36, 0.32, COLORS.gold, x + sx, 2.15, doorZ + 1.4));
+      this.scene.add(box(0.25, 0.25, 0.25, 0xffe080, x + sx, 2.15, doorZ + 1.4));
+    }
+
+    // Caminho até a rua horizontal (z≈0)
     const path = new THREE.Mesh(
-      new THREE.PlaneGeometry(8, 9),
+      new THREE.PlaneGeometry(7.5, 14),
       mat(COLORS.path),
     );
     path.rotation.x = -Math.PI / 2;
-    path.position.set(x, 0.021, z + d / 2 + 4.2);
+    path.position.set(x, 0.021, doorZ + 6.5);
     path.receiveShadow = true;
     this.scene.add(path);
 
-    this.schoolDoorPos.set(x, 0, doorZ + 1.6);
+    // Spawn/interação no caminho, longe da fachada e das colunas
+    this.schoolDoorPos.set(x, 0, doorZ + 3.2);
     this.interactables.push({
       id: 'school',
       name: 'Escola (Kheyder)',
       position: this.schoolDoorPos.clone(),
-      radius: 2.6,
+      radius: 2.8,
     });
   }
 
@@ -2362,10 +2394,9 @@ export class ShtetlWorld {
     this.addCollider(x, z, w + 1.0, d + 1.0);
 
     const doorZ = z + d / 2 + 0.08;
-    // Escadaria
+    // Escadaria (só visual — sem collider pra não travar ao sair)
     this.scene.add(box(5.2, 0.28, 1.6, COLORS.stone, x, 0.2, doorZ + 0.9));
     this.scene.add(box(4.4, 0.28, 1.1, COLORS.stoneDark, x, 0.45, doorZ + 0.45));
-    this.addOrientedBox(x, doorZ + 0.7, 5.0, 2.0, 0);
 
     // Colunas da entrada
     for (const sx of [-1.6, 1.6] as const) {
@@ -2428,7 +2459,7 @@ export class ShtetlWorld {
       this.scene.add(cyl(0.55, 0.65, 0.7, 0x3a8a4a, x + ox, 0.35, doorZ + oz, 8));
     }
 
-    this.libraryDoorPos.set(x, 0, doorZ + 1.8);
+    this.libraryDoorPos.set(x, 0, doorZ + 3.2);
     this.interactables.push({
       id: 'library',
       name: 'Biblioteca',
@@ -2948,8 +2979,8 @@ export class ShtetlWorld {
     this.buildBakery(-20, 8, 8, 6.5, 3.2);
     this.building(20, 8, 8, 6.5, 3.2);
 
-    // Escola do Reb Leyzer — fim oeste da rua horizontal (lado da sinagoga)
-    this.buildLeyzerSchool(-36, -8);
+    // Escola do Reb Leyzer — oeste e um pouco atrás da rua (z=0)
+    this.buildLeyzerSchool(-46, -14);
 
     // Casa norte + casas extras (espaçadas)
     this.building(0, 28, 8, 5.5, 3);
@@ -2978,7 +3009,7 @@ export class ShtetlWorld {
       // Borda
       [-34, -34],
       [34, -34],
-      [-48, 8], // longe da escola (−36,−8)
+      [-54, 8], // longe da escola (−46,−14)
       [38, 8],
       [-40, 40],
       [40, 40],
@@ -3242,6 +3273,24 @@ export class ShtetlWorld {
       { x: 0, z: 34.5 },
       { x: 4, z: 33 },
       { x: -2, z: 32.5 },
+    ]);
+
+    // Perto da escola (−46,−14) — praticam números / verbos
+    this.addNpc('itsik', 'Itsik', 'motl', -42, -4, true, [
+      { x: -42, z: -4 },
+      { x: -38, z: -2 },
+      { x: -44, z: 0 },
+      { x: -50, z: -2 },
+      { x: -48, z: -6 },
+      { x: -42, z: -6 },
+    ]);
+    this.addNpc('golde', 'Golde', 'sora', -50, -2, true, [
+      { x: -50, z: -2 },
+      { x: -54, z: 0 },
+      { x: -48, z: 2 },
+      { x: -42, z: 0 },
+      { x: -44, z: -4 },
+      { x: -50, z: -6 },
     ]);
 
     // Reb Leyzer vive dentro da escola (buildSchoolInterior)

@@ -36,7 +36,9 @@ import {
   dovidChat,
   feldsherChat,
   freydeChat,
+  goldeChat,
   hazanChat,
+  itsikChat,
   khayeChat,
   khayimChat,
   leibChat,
@@ -90,7 +92,9 @@ export type NpcId =
   | 'shnayder'
   | 'freyde'
   | 'motl'
-  | 'leyzer';
+  | 'leyzer'
+  | 'itsik'
+  | 'golde';
 
 /** Moradores secundários — disponíveis em todos os capítulos. */
 const SIDE_DIALOGUES: Partial<Record<NpcId, DialogueTree>> = {
@@ -118,6 +122,8 @@ const SIDE_DIALOGUES: Partial<Record<NpcId, DialogueTree>> = {
   freyde: freydeChat,
   motl: motlChat,
   leyzer: leyzerChat,
+  itsik: itsikChat,
+  golde: goldeChat,
 };
 
 const DIALOGUES: Record<number, Partial<Record<NpcId, DialogueTree>>> = {

@@ -134,7 +134,7 @@ export class DynamicGrass {
     this.clearRects = [
       { minX: -4.2, maxX: 4.2, minZ: -32, maxZ: 36 },
       { minX: -3.8, maxX: 3.8, minZ: 24, maxZ: 48 },
-      { minX: -42, maxX: 42, minZ: -4.2, maxZ: 4.2 },
+      { minX: -62, maxX: 42, minZ: -4.2, maxZ: 4.2 },
       { minX: -29, maxX: 29, minZ: 30.5, maxZ: 37.5 },
       { minX: -21.5, maxX: -14.5, minZ: 18, maxZ: 42 },
       { minX: 14.5, maxX: 21.5, minZ: 18, maxZ: 42 },
