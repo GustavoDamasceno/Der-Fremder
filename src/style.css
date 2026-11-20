@@ -589,22 +589,69 @@ body,
   animation: tile-fall 0.7s ease-in forwards;
 }
 
-.fall-hero {
+.fall-hero,
+.fall-hero-unit {
   position: absolute;
-  top: 0.2rem;
+  top: 0.05rem;
   left: 50%;
   transform: translateX(-50%);
   font-size: 1.8rem;
   transition: left 0.15s ease;
   z-index: 2;
   filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.25));
+  pointer-events: none;
 }
 
-.fall-hero.safe {
+.fall-heroes {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.fall-hero-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 1rem;
+}
+
+.fall-hero-cap {
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 50%;
+  border: 2px solid #fff8e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  line-height: 1;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+.fall-hero-unit.self .fall-hero-cap {
+  outline: 2px solid #c9a227;
+  outline-offset: 1px;
+}
+
+.fall-hero-name {
+  font-size: 0.28rem;
+  color: #fff8e8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  max-width: 3.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fall-hero.safe,
+.fall-hero-unit.safe {
   animation: bounce-ok 0.45s ease;
 }
 
-.fall-hero.fall {
+.fall-hero.fall,
+.fall-hero-unit.fall {
   animation: hero-fall 0.7s ease-in forwards;
 }
 
@@ -1154,26 +1201,6 @@ body.touch-mode .sound-toggle {
   border-color: #555;
 }
 
-.tile-pawns {
-  display: flex;
-  gap: 0.15rem;
-  justify-content: center;
-  margin-top: 0.25rem;
-  min-height: 0.55rem;
-}
-
-.tile-pawn {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 50%;
-  border: 1px solid #fff8e8;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-
-.tile-pawn.self {
-  outline: 2px solid #c9a227;
-}
-
 .coop-face-meta {
   display: flex;
   flex-direction: column;
@@ -1335,25 +1362,5 @@ body.touch-mode .sound-toggle {
   }
   to {
     transform: scaleY(1.15);
-  }
-}
-
-@media (orientation: portrait) {
-  body.touch-mode .touch-controls::after {
-    content: 'Gire o celular para jogar →';
-    position: absolute;
-    left: 50%;
-    top: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(26, 20, 16, 0.92);
-    color: #c9a227;
-    padding: 1rem 1.25rem;
-    font-size: 0.55rem;
-    text-align: center;
-    border: 2px solid #c9a227;
-    pointer-events: none;
-    z-index: 30;
-    max-width: 80vw;
-    line-height: 1.6;
   }
 }

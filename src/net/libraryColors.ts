@@ -18,12 +18,24 @@ export function pickFreeCoat(taken: Iterable<number>): number {
   const used = new Set(
     [...taken].map((c) => (c >>> 0) & 0xffffff),
   );
-  for (const color of LIBRARY_COAT_COLORS) {
-    if (!used.has(color)) return color;
+  const free = LIBRARY_COAT_COLORS.filter((c) => !used.has(c));
+  if (free.length > 0) {
+    return free[Math.floor(Math.random() * free.length)]!;
   }
   // Fallback: variação leve se todas ocupadas
   const base = LIBRARY_COAT_COLORS[Math.floor(Math.random() * LIBRARY_COAT_COLORS.length)]!;
   return (base + Math.floor(Math.random() * 0x202020)) & 0xffffff;
+}
+
+/** Garante casacos únicos na lista (reatribui colisões ao acaso). */
+export function ensureUniqueCoats<T extends { coat: number }>(players: T[]): T[] {
+  const used: number[] = [];
+  return players.map((p) => {
+    let coat = (p.coat >>> 0) & 0xffffff;
+    if (used.includes(coat)) coat = pickFreeCoat(used);
+    used.push(coat);
+    return coat === p.coat ? p : { ...p, coat };
+  });
 }
 
 export function normalizeRoomCode(raw: string): string {

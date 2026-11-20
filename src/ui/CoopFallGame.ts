@@ -174,9 +174,7 @@ export class CoopFallGame {
         <div class="arcade-timer"><i id="coop-timer"></i></div>
         <div class="arcade-stage" id="coop-stage">
           <div class="fall-sky"></div>
-          <div class="fall-hero" id="coop-hero">${
-            !alive && !this.aliveAtRoundStart ? '💀' : '🧒'
-          }</div>
+          <div class="fall-heroes" id="coop-heroes"></div>
           <div class="fall-platforms" id="coop-opts"></div>
         </div>
         <div class="practice-foot">
@@ -201,7 +199,6 @@ export class CoopFallGame {
       tile.innerHTML = `
         <span class="opt-key">${i + 1}</span>
         <span class="opt-text">${escapeHtml(c)}</span>
-        <span class="tile-pawns" data-tile="${i}"></span>
       `;
       tile.disabled = resolving || !alive;
       if (alive && !resolving) {
@@ -209,31 +206,84 @@ export class CoopFallGame {
       }
       opts.appendChild(tile);
     });
-    this.paintPawns(match, round);
+    this.paintHeroes(match, round);
     this.refreshHighlight();
     if (resolving) this.revealFallOutcome(match, round);
     this.root.querySelector('#coop-leave')!.addEventListener('click', () => void this.exit());
     if (!resolving) this.tickTimer();
   }
 
-  private paintPawns(match: CoopMatchSnapshot, round: CoopRoundPayload): void {
+  /** Cabeças coloridas de todos os vivos acima do chão escolhido. */
+  private paintHeroes(match: CoopMatchSnapshot, round: CoopRoundPayload): void {
+    const layer = this.root.querySelector('#coop-heroes');
+    if (!layer) return;
+    layer.innerHTML = '';
+
+    const resolving = match.phase === 'resolving';
     for (const p of match.players) {
-      if (!match.alive[p.id] && match.phase === 'playing') continue;
-      const choice = match.answers[p.id] ?? -1;
-      if (choice < 0 || choice >= round.choices.length) continue;
-      const host = this.root.querySelector(`.tile-pawns[data-tile="${choice}"]`);
-      if (!host) continue;
+      const isSelf = p.id === this.room.selfId;
+      if (resolving) {
+        if (isSelf && !this.aliveAtRoundStart) continue;
+        if (!isSelf && !match.alive[p.id] && (match.answers[p.id] ?? -1) < 0) continue;
+      } else if (!match.alive[p.id]) {
+        continue;
+      }
+
+      const floor = this.floorOfHero(match, p.id, round);
+      if (floor < 0) continue;
+
       const color = `#${(p.coat >>> 0).toString(16).padStart(6, '0')}`;
-      const chip = document.createElement('i');
-      chip.className = 'tile-pawn';
-      if (p.id === this.room.selfId) chip.classList.add('self');
-      chip.style.background = color;
-      chip.title = p.name;
-      host.appendChild(chip);
+      const unit = document.createElement('div');
+      unit.className = 'fall-hero-unit';
+      unit.dataset.pid = p.id;
+      if (isSelf) unit.classList.add('self');
+      unit.title = p.name;
+      unit.innerHTML = `
+        <span class="fall-hero-cap" style="background:${color}">🧒</span>
+        <span class="fall-hero-name">${escapeHtml(p.name)}</span>
+      `;
+      layer.appendChild(unit);
+    }
+    this.layoutHeroes(match, round);
+  }
+
+  private floorOfHero(
+    match: CoopMatchSnapshot,
+    pid: string,
+    round: CoopRoundPayload,
+  ): number {
+    // Local: posição otimista (não espera o sync da rede).
+    let floor =
+      pid === this.room.selfId && match.phase === 'playing'
+        ? this.selected
+        : (match.answers[pid] ?? -1);
+    if (floor < 0 || floor >= round.choices.length) return -1;
+    return floor;
+  }
+
+  private layoutHeroes(match: CoopMatchSnapshot, round: CoopRoundPayload): void {
+    const stage = this.root.querySelector('#coop-stage') as HTMLElement | null;
+    const opts = this.root.querySelectorAll('.practice-opt');
+    const layer = this.root.querySelector('#coop-heroes');
+    if (!stage || !layer) return;
+
+    const stacks: Record<number, number> = {};
+    for (const el of layer.querySelectorAll('.fall-hero-unit')) {
+      const unit = el as HTMLElement;
+      const pid = unit.dataset.pid!;
+      const floor = this.floorOfHero(match, pid, round);
+      if (floor < 0) continue;
+      const tile = opts[floor] as HTMLElement | undefined;
+      if (!tile) continue;
+      const stack = stacks[floor] ?? 0;
+      stacks[floor] = stack + 1;
+      const sr = stage.getBoundingClientRect();
+      const tr = tile.getBoundingClientRect();
+      unit.style.left = `${tr.left - sr.left + tr.width / 2 + stack * 14}px`;
     }
   }
 
-  /** Quando o tempo acaba: chãos errados caem; herói cai se errou nesta rodada. */
+  /** Quando o tempo acaba: chãos errados caem; cabeças no errado caem junto. */
   private revealFallOutcome(match: CoopMatchSnapshot, round: CoopRoundPayload): void {
     const opts = this.root.querySelectorAll('.practice-opt');
     opts.forEach((el, i) => {
@@ -242,28 +292,14 @@ export class CoopFallGame {
       else el.classList.add('wrong', 'falling');
     });
 
-    const hero = this.root.querySelector('#coop-hero') as HTMLElement | null;
-    if (!hero) return;
-
-    // Já eliminado em rodada anterior: só assiste.
-    if (!this.aliveAtRoundStart) {
-      hero.textContent = '💀';
-      return;
-    }
-
-    const survived = !!match.alive[this.room.selfId];
-    const correctIdx = round.choices.indexOf(round.answer);
-    const stage = this.root.querySelector('#coop-stage') as HTMLElement | null;
-    const standIdx = survived
-      ? correctIdx
-      : (match.answers[this.room.selfId] ?? this.selected);
-    const tile = opts[standIdx] as HTMLElement | undefined;
-    if (tile && stage) {
-      const sr = stage.getBoundingClientRect();
-      const tr = tile.getBoundingClientRect();
-      hero.style.left = `${tr.left - sr.left + tr.width / 2}px`;
-    }
-    hero.classList.add(survived ? 'safe' : 'fall');
+    this.paintHeroes(match, round);
+    const units = this.root.querySelectorAll('.fall-hero-unit');
+    units.forEach((el) => {
+      const pid = (el as HTMLElement).dataset.pid!;
+      const floor = match.answers[pid] ?? -1;
+      const ok = floor >= 0 && round.choices[floor] === round.answer;
+      el.classList.add(ok && match.alive[pid] ? 'safe' : 'fall');
+    });
   }
 
   private renderResults(match: CoopMatchSnapshot): void {
@@ -355,17 +391,20 @@ export class CoopFallGame {
   private refreshHighlight(): void {
     const match = this.match;
     if (!match || match.phase !== 'playing') return;
-    if (!match.alive[this.room.selfId]) return;
+    const round = match.rounds[match.roundIndex];
+    if (!round) return;
 
     const opts = this.root.querySelectorAll('.practice-opt');
-    opts.forEach((el, i) => el.classList.toggle('selected', i === this.selected));
-    const hero = this.root.querySelector('#coop-hero') as HTMLElement | null;
-    const tile = opts[this.selected] as HTMLElement | undefined;
-    const stage = this.root.querySelector('#coop-stage') as HTMLElement | null;
-    if (hero && tile && stage) {
-      const sr = stage.getBoundingClientRect();
-      const tr = tile.getBoundingClientRect();
-      hero.style.left = `${tr.left - sr.left + tr.width / 2}px`;
+    opts.forEach((el, i) => {
+      const mine = match.alive[this.room.selfId] && i === this.selected;
+      el.classList.toggle('selected', mine);
+    });
+    // Garante cabeça local mesmo antes do sync; reposiciona todas.
+    const layer = this.root.querySelector('#coop-heroes');
+    if (layer && !layer.querySelector(`[data-pid="${this.room.selfId}"]`)) {
+      this.paintHeroes(match, round);
+    } else {
+      this.layoutHeroes(match, round);
     }
   }
 
@@ -378,7 +417,8 @@ export class CoopFallGame {
       bar.style.width = `${pct * 100}%`;
       bar.classList.toggle('urgent', pct < 0.28);
     }
-    this.refreshHighlight();
+    const round = this.match.rounds[this.match.roundIndex];
+    if (round) this.layoutHeroes(this.match, round);
     this.timerRaf = requestAnimationFrame(this.tickTimer);
   };
 
@@ -386,7 +426,16 @@ export class CoopFallGame {
     if (!this.match || this.match.phase !== 'playing') return;
     if (!this.match.alive[this.room.selfId]) return;
     this.selected = index;
-    this.refreshHighlight();
+    const round = this.match.rounds[this.match.roundIndex];
+    if (round) {
+      const opts = this.root.querySelectorAll('.practice-opt');
+      opts.forEach((el, i) => el.classList.toggle('selected', i === index));
+      if (!this.root.querySelector(`#coop-heroes [data-pid="${this.room.selfId}"]`)) {
+        this.paintHeroes(this.match, round);
+      } else {
+        this.layoutHeroes(this.match, round);
+      }
+    }
     await this.room.submitCoopAnswer(index);
   }
 

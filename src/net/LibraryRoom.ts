@@ -6,7 +6,7 @@ import {
   type UserState,
 } from 'trystero';
 import { buildMixedFallRounds } from '../data/practice';
-import { normalizeRoomCode, pickFreeCoat } from './libraryColors';
+import { ensureUniqueCoats, normalizeRoomCode, pickFreeCoat } from './libraryColors';
 import {
   COOP_QUESTION_POOL,
   COOP_RESOLVE_MS,
@@ -303,13 +303,16 @@ export class LibraryRoom {
 
   async createOrJoinLobby(): Promise<CoopMatchSnapshot> {
     if (!this.coopState) throw new Error('Sala não conectada.');
-    const me: CoopPlayerInfo = {
-      id: this.selfUserId,
-      name: this.localName,
-      coat: this.localCoat,
-    };
     const cur = this.coopState.get();
     if (!cur || cur.phase === 'results') {
+      // Cor aleatória livre ao abrir lobby.
+      this.localCoat = pickFreeCoat([]);
+      this.publish({});
+      const me: CoopPlayerInfo = {
+        id: this.selfUserId,
+        name: this.localName,
+        coat: this.localCoat,
+      };
       const lobby: CoopMatchSnapshot = {
         phase: 'lobby',
         hostId: this.selfUserId,
@@ -338,6 +341,17 @@ export class LibraryRoom {
     if (cur.players.length >= LIBRARY_MAX_PLAYERS) {
       throw new Error('Lobby cheio (máx. 10).');
     }
+    // Nunca repetir a cor de quem já está no lobby.
+    const taken = cur.players.map((p) => p.coat);
+    if (taken.map((c) => (c >>> 0) & 0xffffff).includes((this.localCoat >>> 0) & 0xffffff)) {
+      this.localCoat = pickFreeCoat(taken);
+      this.publish({});
+    }
+    const me: CoopPlayerInfo = {
+      id: this.selfUserId,
+      name: this.localName,
+      coat: this.localCoat,
+    };
     const next: CoopMatchSnapshot = {
       ...cur,
       players: [...cur.players, me],
@@ -383,10 +397,11 @@ export class LibraryRoom {
       yi: r.learn.yiddish,
       pt: r.learn.portuguese,
     }));
+    const players = ensureUniqueCoats(match.players);
     const scores: Record<string, number> = {};
     const answers: Record<string, number> = {};
     const alive: Record<string, boolean> = {};
-    for (const p of match.players) {
+    for (const p of players) {
       scores[p.id] = 0;
       answers[p.id] = -1;
       alive[p.id] = true;
@@ -394,6 +409,7 @@ export class LibraryRoom {
     const roundMs = coopRoundMs(0);
     const playing: CoopMatchSnapshot = {
       ...match,
+      players,
       phase: 'playing',
       alive,
       rounds,
