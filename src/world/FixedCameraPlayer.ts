@@ -26,8 +26,8 @@ export class FixedCameraPlayer {
   private readonly camOffsetOutdoor = new THREE.Vector3(0, 14, 16);
   /** Offset da câmera na sinagoga (sala fechada — mais baixa e perto). */
   private readonly camOffsetIndoor = new THREE.Vector3(-3.2, 4.2, 3.8);
-  /** Limites para a câmera não atravessar as paredes. */
-  private readonly indoorCamBounds = { min: -5.2, max: 5.2, yMin: 2.8, yMax: 5.4 };
+  /** Limites para a câmera não atravessar as paredes (escola / sinagoga). */
+  private readonly indoorCamBounds = { min: -8.5, max: 8.5, yMin: 2.6, yMax: 6.2 };
   private indoor = false;
   private gamepad: GamepadInput | null = null;
   private touch: TouchControls | null = null;

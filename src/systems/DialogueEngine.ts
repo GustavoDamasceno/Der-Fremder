@@ -1,4 +1,5 @@
 import type { DialogueOption, DialogueTree, DialogueTurn } from '../data/dialogue/chapter1';
+import type { PracticeTopic } from '../data/practice';
 import { GameState } from '../state/GameState';
 
 export interface TurnResult {
@@ -8,6 +9,7 @@ export interface TurnResult {
   done: boolean;
   nextTurn: DialogueTurn | null;
   lodgingGranted: boolean;
+  openPractice: PracticeTopic | null;
 }
 
 export class DialogueEngine {
@@ -71,6 +73,8 @@ export class DialogueEngine {
       GameState.flags.lodgingGranted = true;
     }
 
+    const openPractice = option.openPractice ?? null;
+
     if (!nextId) {
       return {
         reaction: option.reaction,
@@ -79,6 +83,7 @@ export class DialogueEngine {
         done: true,
         nextTurn: null,
         lodgingGranted: GameState.flags.lodgingGranted,
+        openPractice,
       };
     }
 
@@ -90,6 +95,7 @@ export class DialogueEngine {
       done: false,
       nextTurn: this.tree.turns[nextId],
       lodgingGranted: GameState.flags.lodgingGranted,
+      openPractice,
     };
   }
 

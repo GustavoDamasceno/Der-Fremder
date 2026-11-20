@@ -1,3 +1,4 @@
+import type { PracticeTopic } from '../practice';
 import type { GameFlags, VocabEntry } from '../../state/GameState';
 
 export type DialogueKind = 'recognition' | 'response' | 'narration' | 'choice';
@@ -11,6 +12,8 @@ export interface DialogueOption {
   reputationDelta?: number;
   learn?: VocabEntry[];
   setFlags?: Partial<GameFlags>;
+  /** Abre minigame de prática após a reação. */
+  openPractice?: PracticeTopic;
 }
 
 export interface DialogueTurn {

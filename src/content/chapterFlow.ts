@@ -40,6 +40,7 @@ import {
   khayeChat,
   khayimChat,
   leibChat,
+  leyzerChat,
   melamedChat,
   mendlChat,
   meyerChat,
@@ -63,6 +64,7 @@ export type NpcId =
   | 'photo'
   | 'inn'
   | 'synagogue'
+  | 'school'
   | 'mendl'
   | 'khaye'
   | 'berl'
@@ -85,7 +87,8 @@ export type NpcId =
   | 'melamed'
   | 'shnayder'
   | 'freyde'
-  | 'motl';
+  | 'motl'
+  | 'leyzer';
 
 /** Moradores secundários — disponíveis em todos os capítulos. */
 const SIDE_DIALOGUES: Partial<Record<NpcId, DialogueTree>> = {
@@ -112,6 +115,7 @@ const SIDE_DIALOGUES: Partial<Record<NpcId, DialogueTree>> = {
   shnayder: shnayderChat,
   freyde: freydeChat,
   motl: motlChat,
+  leyzer: leyzerChat,
 };
 
 const DIALOGUES: Record<number, Partial<Record<NpcId, DialogueTree>>> = {

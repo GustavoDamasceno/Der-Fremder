@@ -1051,6 +1051,37 @@ function makeStarOfDavid(size = 0.9, color: number = COLORS.gold): THREE.Group {
 }
 
 /** Mezuzá na ombreira da porta. */
+function makeBlackboardTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 256;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#1a3a2a';
+  ctx.fillRect(0, 0, 512, 256);
+  // Quadro um pouco gasto
+  for (let i = 0; i < 40; i++) {
+    ctx.fillStyle = `rgba(255,255,255,${0.015 + Math.random() * 0.02})`;
+    ctx.fillRect(Math.random() * 512, Math.random() * 256, 20 + Math.random() * 40, 2);
+  }
+  ctx.fillStyle = '#e8f0e0';
+  ctx.font = '28px Georgia, serif';
+  ctx.fillText('ikh  du  er  zi', 40, 70);
+  ctx.fillText('mir  ir  zey', 40, 115);
+  ctx.font = '24px Georgia, serif';
+  ctx.fillText('1 eyns   2 tsvey   3 dray', 40, 175);
+  ctx.fillText('zayn · geyn · redn', 40, 220);
+  // Linha de giz
+  ctx.strokeStyle = 'rgba(230,240,220,0.7)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(40, 135);
+  ctx.lineTo(420, 135);
+  ctx.stroke();
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
 function makeMezuzah(x: number, y: number, z: number): THREE.Mesh {
   const m = box(0.08, 0.35, 0.08, COLORS.woodLight, x, y, z);
   m.rotation.z = -0.35;
@@ -1099,20 +1130,30 @@ export class ShtetlWorld {
 
   private readonly outdoor = new THREE.Group();
   private readonly shulInterior = new THREE.Group();
+  private readonly schoolInterior = new THREE.Group();
   private inShul = false;
+  private inSchool = false;
   private readonly outdoorColliders: Collider[] = [];
   private readonly outdoorCircles: CircleSolid[] = [];
   private readonly shulColliders: Collider[] = [];
   private readonly shulCircles: CircleSolid[] = [];
+  private readonly schoolColliders: Collider[] = [];
+  private readonly schoolCircles: CircleSolid[] = [];
   private outdoorInteractables: Interactable[] = [];
   private readonly shulInteractables: Interactable[] = [];
+  private readonly schoolInteractables: Interactable[] = [];
   private buildingShul = false;
+  private buildingSchool = false;
   private outdoorHemi!: THREE.HemisphereLight;
   private outdoorSun!: THREE.DirectionalLight;
   private shulLight!: THREE.PointLight;
   private shulFill!: THREE.HemisphereLight;
+  private schoolLight!: THREE.PointLight;
+  private schoolFill!: THREE.HemisphereLight;
   private readonly cows: GrazingCow[] = [];
   private grass: DynamicGrass | null = null;
+  /** Fachada da escola (mundo aberto) — para spawn ao sair. */
+  private schoolDoorPos = new THREE.Vector3(-36, 0, -1.5);
 
   private static readonly SHUL_NPCS = new Set<NpcId>([
     'hazan',
@@ -1126,6 +1167,8 @@ export class ShtetlWorld {
     'dovid',
     'khayim',
   ]);
+
+  private static readonly SCHOOL_NPCS = new Set<NpcId>(['leyzer']);
 
   constructor() {
     // Céu cartoon — azul vivo, névoa clara
@@ -1149,7 +1192,9 @@ export class ShtetlWorld {
 
     this.scene.add(this.outdoor);
     this.scene.add(this.shulInterior);
+    this.scene.add(this.schoolInterior);
     this.shulInterior.visible = false;
+    this.schoolInterior.visible = false;
 
     this.shulLight = new THREE.PointLight(0xffe0b0, 2.2, 32, 1.5);
     this.shulLight.position.set(0, 4.2, 0);
@@ -1159,26 +1204,41 @@ export class ShtetlWorld {
     this.shulFill.visible = false;
     this.scene.add(this.shulFill);
 
+    this.schoolLight = new THREE.PointLight(0xfff0d0, 2.0, 28, 1.4);
+    this.schoolLight.position.set(0, 4.0, 0);
+    this.schoolLight.visible = false;
+    this.scene.add(this.schoolLight);
+    this.schoolFill = new THREE.HemisphereLight(0xfff8e8, 0x8a7a58, 1.05);
+    this.schoolFill.visible = false;
+    this.scene.add(this.schoolFill);
+
     this.buildGround();
     this.buildBuildings();
     this.buildJewishDetails();
     this.buildProps();
     this.buildNpcs();
 
-    // Empacota o shtetl num grupo (cenário separado da sinagoga)
+    // Empacota o shtetl num grupo (cenário separado da sinagoga / escola)
     this.packOutdoor();
     this.outdoorInteractables = [...this.interactables];
     this.outdoorColliders.push(...this.colliders);
     this.outdoorCircles.push(...this.circles);
 
     this.buildSynagogueInterior();
+    this.buildSchoolInterior();
     this.setSynagogueMode(false);
   }
 
   /** Move tudo que não é luz / grupos de cena para o grupo outdoor. */
   private packOutdoor(): void {
     for (const child of [...this.scene.children]) {
-      if (child === this.outdoor || child === this.shulInterior) continue;
+      if (
+        child === this.outdoor ||
+        child === this.shulInterior ||
+        child === this.schoolInterior
+      ) {
+        continue;
+      }
       if ((child as THREE.Light).isLight) continue;
       this.outdoor.add(child);
     }
@@ -1192,12 +1252,14 @@ export class ShtetlWorld {
       maxZ: z + d / 2,
     };
     if (this.buildingShul) this.shulColliders.push(c);
+    else if (this.buildingSchool) this.schoolColliders.push(c);
     else this.colliders.push(c);
   }
 
   private addCircle(x: number, z: number, r: number): void {
     const c = { x, z, r };
     if (this.buildingShul) this.shulCircles.push(c);
+    else if (this.buildingSchool) this.schoolCircles.push(c);
     else this.circles.push(c);
   }
 
@@ -1536,6 +1598,10 @@ export class ShtetlWorld {
       this.colliders.push(...this.shulColliders);
       this.circles.push(...this.shulCircles);
       this.interactables.push(...this.shulInteractables);
+    } else if (this.inSchool) {
+      this.colliders.push(...this.schoolColliders);
+      this.circles.push(...this.schoolCircles);
+      this.interactables.push(...this.schoolInteractables);
     } else {
       this.colliders.push(...this.outdoorColliders);
       this.circles.push(...this.outdoorCircles);
@@ -1547,34 +1613,80 @@ export class ShtetlWorld {
     return this.inShul;
   }
 
+  isInSchoolScene(): boolean {
+    return this.inSchool;
+  }
+
+  private applyNpcVisibility(): void {
+    for (const npc of this.npcs) {
+      if (npc.id === 'shloyme') continue; // refreshChapterVisibility
+      const isShulNpc = ShtetlWorld.SHUL_NPCS.has(npc.id);
+      const isSchoolNpc = ShtetlWorld.SCHOOL_NPCS.has(npc.id);
+      if (this.inShul) npc.mesh.visible = isShulNpc;
+      else if (this.inSchool) npc.mesh.visible = isSchoolNpc;
+      else npc.mesh.visible = !isShulNpc && !isSchoolNpc;
+    }
+  }
+
   setSynagogueMode(inside: boolean): void {
     this.inShul = inside;
-    this.outdoor.visible = !inside;
+    if (inside) this.inSchool = false;
+    this.outdoor.visible = !inside && !this.inSchool;
     this.shulInterior.visible = inside;
-    this.outdoorHemi.visible = !inside;
-    this.outdoorSun.visible = !inside;
+    this.schoolInterior.visible = this.inSchool;
+    this.outdoorHemi.visible = !inside && !this.inSchool;
+    this.outdoorSun.visible = !inside && !this.inSchool;
     this.shulLight.visible = inside;
     this.shulFill.visible = inside;
+    this.schoolLight.visible = this.inSchool;
+    this.schoolFill.visible = this.inSchool;
 
     if (inside) {
       this.scene.background = new THREE.Color(CARTOON.shulBg);
       this.scene.fog = new THREE.Fog(CARTOON.shulBg, 12, 28);
-    } else {
+    } else if (!this.inSchool) {
       this.scene.background = new THREE.Color(CARTOON.sky);
       this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
     }
 
-    for (const npc of this.npcs) {
-      const isShulNpc = ShtetlWorld.SHUL_NPCS.has(npc.id);
-      if (npc.id === 'shloyme') {
-        // tratado em refreshChapterVisibility
-        continue;
-      }
-      npc.mesh.visible = inside ? isShulNpc : !isShulNpc;
-    }
-
+    this.applyNpcVisibility();
     this.refreshModeSets();
     this.refreshChapterVisibility();
+  }
+
+  setSchoolMode(inside: boolean): void {
+    this.inSchool = inside;
+    if (inside) this.inShul = false;
+    this.outdoor.visible = !inside && !this.inShul;
+    this.schoolInterior.visible = inside;
+    this.shulInterior.visible = this.inShul;
+    this.outdoorHemi.visible = !inside && !this.inShul;
+    this.outdoorSun.visible = !inside && !this.inShul;
+    this.schoolLight.visible = inside;
+    this.schoolFill.visible = inside;
+    this.shulLight.visible = this.inShul;
+    this.shulFill.visible = this.inShul;
+
+    if (inside) {
+      this.scene.background = new THREE.Color(CARTOON.schoolBg);
+      this.scene.fog = new THREE.Fog(CARTOON.schoolBg, 14, 32);
+    } else if (!this.inShul) {
+      this.scene.background = new THREE.Color(CARTOON.sky);
+      this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
+    }
+
+    this.applyNpcVisibility();
+    this.refreshModeSets();
+    this.refreshChapterVisibility();
+  }
+
+  spawnInsideSchool(): THREE.Vector3 {
+    // Corredor central, perto da porta — longe das carteiras
+    return new THREE.Vector3(0, 0, -7.4);
+  }
+
+  spawnOutsideSchool(): THREE.Vector3 {
+    return this.schoolDoorPos.clone();
   }
 
   private tree(x: number, z: number): void {
@@ -1856,6 +1968,260 @@ export class ShtetlWorld {
     this.addOrientedBox(x + 2.2, doorZ + 1.3, 2.1, 0.7, 0);
     this.scene.add(box(0.35, 0.12, 0.28, 0x6b3a55, x + 2.0, 0.72, doorZ + 1.25));
     this.scene.add(box(0.32, 0.1, 0.26, 0x3a6a8a, x + 2.0, 0.84, doorZ + 1.25));
+  }
+
+  /**
+   * Fachada da escola do Reb Leyzer — fim oeste da rua horizontal.
+   * Interior é cenário próprio (como a sinagoga).
+   */
+  private buildLeyzerSchool(x: number, z: number): void {
+    const w = 12;
+    const d = 10;
+    const h = 4.6;
+    const bookColors = [0x6e2e22, 0x2a3a5a, 0x3a5a3a, 0x5a3a2a, 0x4a2a4a, 0x2a2a28, 0x8a5030];
+
+    this.scene.add(box(w, h, d, 0xf2e8d4, x, h / 2, z));
+    this.scene.add(box(w + 0.08, 0.22, d + 0.08, COLORS.wood, x, 1.05, z));
+    this.scene.add(box(w + 0.7, 0.42, d + 0.7, 0x2f5f4a, x, h + 0.2, z));
+    this.scene.add(box(w * 0.38, 0.55, d + 0.25, 0x244a3a, x, h + 0.55, z));
+    this.addCollider(x, z, w + 0.8, d + 0.8);
+
+    const doorZ = z + d / 2 + 0.06;
+    // Porta grande (entrada)
+    this.scene.add(box(1.7, 2.45, 0.12, COLORS.wood, x, 1.22, doorZ));
+    this.scene.add(box(0.12, 0.12, 0.1, COLORS.gold, x + 0.55, 1.25, doorZ + 0.08));
+    this.scene.add(makeMezuzah(x + 0.95, 1.85, doorZ + 0.05));
+
+    // Janelas laterais
+    for (const sx of [-3.6, 3.6] as const) {
+      this.scene.add(box(1.8, 1.5, 0.1, COLORS.wood, x + sx, 2.2, doorZ));
+      this.scene.add(box(1.55, 1.25, 0.06, 0x9ec8e0, x + sx, 2.2, doorZ + 0.05));
+      for (let i = 0; i < 6; i++) {
+        const c = bookColors[(i + (sx > 0 ? 2 : 0)) % bookColors.length]!;
+        const bh = 0.3 + (i % 3) * 0.05;
+        this.scene.add(
+          box(0.12, bh, 0.16, c, x + sx - 0.55 + i * 0.22, 1.75 + bh / 2, doorZ + 0.1),
+        );
+      }
+    }
+
+    // Placa Kheyder
+    this.scene.add(box(3.4, 0.65, 0.12, 0x2a4a3a, x, 3.85, doorZ + 0.16));
+    this.scene.add(box(3.05, 0.42, 0.08, 0xf0e6d0, x, 3.85, doorZ + 0.22));
+
+    // Bancada de livros na frente (sem bloquear a porta)
+    const bx = x + 3.6;
+    const bz = doorZ + 2.0;
+    this.scene.add(box(3.2, 0.1, 1.8, COLORS.wood, bx, 2.2, bz));
+    this.scene.add(box(3.4, 0.08, 2.0, 0xc9a227, bx, 2.3, bz));
+    this.scene.add(box(3.0, 0.12, 1.1, COLORS.woodLight, bx, 1.0, bz + 0.1));
+    this.scene.add(box(2.9, 0.85, 0.12, COLORS.wood, bx, 0.48, bz + 0.55));
+    this.addOrientedBox(bx, bz, 3.2, 2.0, 0);
+    for (let i = 0; i < 8; i++) {
+      const c = bookColors[i % bookColors.length]!;
+      const bh = 0.28 + (i % 3) * 0.05;
+      this.scene.add(box(0.1, bh, 0.2, c, bx - 1.1 + i * 0.28, 1.12 + bh / 2, bz + 0.15));
+    }
+
+    // Caminho até a rua horizontal
+    const path = new THREE.Mesh(
+      new THREE.PlaneGeometry(8, 9),
+      mat(COLORS.path),
+    );
+    path.rotation.x = -Math.PI / 2;
+    path.position.set(x, 0.021, z + d / 2 + 4.2);
+    path.receiveShadow = true;
+    this.scene.add(path);
+
+    this.schoolDoorPos.set(x, 0, doorZ + 1.6);
+    this.interactables.push({
+      id: 'school',
+      name: 'Escola (Kheyder)',
+      position: this.schoolDoorPos.clone(),
+      radius: 2.6,
+    });
+  }
+
+  /** Sala de aula — cenário interno amplo, com corredor central. */
+  private buildSchoolInterior(): void {
+    this.buildingSchool = true;
+    const add = (o: THREE.Object3D) => this.schoolInterior.add(o);
+
+    const w = 20;
+    const d = 18;
+    const h = 5.8;
+    const t = 0.4;
+
+    add(box(w, 0.12, d, 0xc4a878, 0, -0.06, 0));
+    // Tapete do corredor
+    add(box(3.2, 0.04, d - 1.2, 0xb88858, 0, 0.01, 0));
+    add(box(w, 0.2, d, 0xe8dcc8, 0, h, 0));
+
+    add(box(w, h, t, 0xf5ecd8, 0, h / 2, -d / 2 + t / 2));
+    add(box(w, h, t, 0xf0e6d0, 0, h / 2, d / 2 - t / 2));
+    add(box(t, h, d, 0xefe4ce, -w / 2 + t / 2, h / 2, 0));
+    add(box(t, h, d, 0xefe4ce, w / 2 - t / 2, h / 2, 0));
+    this.addCollider(0, -d / 2 + t / 2, w + 0.3, t + 0.35);
+    this.addCollider(0, d / 2 - t / 2, w + 0.3, t + 0.35);
+    this.addCollider(-w / 2 + t / 2, 0, t + 0.35, d + 0.3);
+    this.addCollider(w / 2 - t / 2, 0, t + 0.35, d + 0.3);
+
+    // —— Lousa (norte) ——
+    const boardZ = d / 2 - t - 0.2;
+    add(box(7.2, 3.0, 0.14, COLORS.wood, 0, 2.55, boardZ));
+    const boardTex = makeBlackboardTexture();
+    const boardMat = new THREE.MeshToonMaterial({
+      map: boardTex,
+      gradientMap: getToonGradient(),
+      color: 0xffffff,
+    });
+    const board = new THREE.Mesh(new THREE.BoxGeometry(6.6, 2.6, 0.1), boardMat);
+    board.position.set(0, 2.55, boardZ - 0.12);
+    add(board);
+    add(box(1.2, 0.1, 0.28, COLORS.woodLight, 0, 1.15, boardZ - 0.55));
+    add(box(0.32, 0.06, 0.1, 0xf5f0e6, -0.3, 1.24, boardZ - 0.55));
+    add(box(0.24, 0.08, 0.14, 0x3a3a38, 0.35, 1.25, boardZ - 0.55));
+
+    // Mesa do professor (à frente, sem bloquear o corredor)
+    const teachZ = boardZ - 2.4;
+    add(box(2.6, 0.12, 1.15, COLORS.wood, 0, 0.95, teachZ));
+    add(box(0.12, 0.9, 0.12, COLORS.wood, -1.1, 0.45, teachZ + 0.4));
+    add(box(0.12, 0.9, 0.12, COLORS.wood, 1.1, 0.45, teachZ + 0.4));
+    add(box(0.12, 0.9, 0.12, COLORS.wood, -1.1, 0.45, teachZ - 0.4));
+    add(box(0.12, 0.9, 0.12, COLORS.wood, 1.1, 0.45, teachZ - 0.4));
+    add(box(0.5, 0.06, 0.38, 0x3a2a18, -0.4, 1.05, teachZ));
+    add(box(0.44, 0.04, 0.32, 0xf0e6d0, -0.4, 1.1, teachZ));
+    add(cyl(0.06, 0.07, 0.1, 0x2a2a32, 0.55, 1.08, teachZ + 0.15, 8));
+    this.addOrientedBox(0, teachZ, 2.4, 1.0, 0);
+
+    // —— Estantes de livros (paredes laterais + cantos) ——
+    const bookColors = [0x6e2e22, 0x2a3a5a, 0x3a5a3a, 0x5a3a2a, 0x4a2a4a, 0x2a2a28, 0x8a5030];
+    const placeCase = (x: number, z: number, rotY: number, width = 4.2) => {
+      const g = makeBookcase(0, 0, width);
+      g.position.set(x, 0, z);
+      g.rotation.y = rotY;
+      add(g);
+      const c = Math.abs(Math.cos(rotY));
+      const s = Math.abs(Math.sin(rotY));
+      this.addOrientedBox(x, z, 0.55 * c + width * s, width * c + 0.55 * s, 0);
+    };
+    // makeBookcase: lombadas olham para −Z local → girar para apontar ao centro da sala
+    placeCase(-w / 2 + t + 0.55, 4.5, -Math.PI / 2, 4.5); // oeste → +X
+    placeCase(-w / 2 + t + 0.55, -1.5, -Math.PI / 2, 4.0);
+    placeCase(-w / 2 + t + 0.55, -6.5, -Math.PI / 2, 3.6);
+    placeCase(w / 2 - t - 0.55, 4.5, Math.PI / 2, 4.5); // leste → −X
+    placeCase(w / 2 - t - 0.55, -1.5, Math.PI / 2, 4.0);
+    placeCase(w / 2 - t - 0.55, -6.5, Math.PI / 2, 3.6);
+    // Pilhas extras no chão / aparador
+    this.addSchoolBookPiles(add, -7.2, 7.2, bookColors);
+    this.addSchoolBookPiles(add, 7.2, 7.2, bookColors);
+
+    // —— Carteiras nas laterais (corredor central livre |x| < 2) ——
+    const deskPositions: [number, number][] = [
+      [-5.2, 2.2],
+      [5.2, 2.2],
+      [-5.2, -0.8],
+      [5.2, -0.8],
+      [-5.2, -3.8],
+      [5.2, -3.8],
+    ];
+    for (const [dx, dz] of deskPositions) {
+      this.addSchoolDesk(add, dx, dz);
+      this.addOrientedBox(dx, dz, 1.25, 1.05, 0);
+    }
+
+    // Porta de saída (sul)
+    add(box(2.2, 2.3, 0.12, COLORS.wood, 0, 1.15, -d / 2 + t + 0.05));
+    add(box(0.1, 0.1, 0.1, COLORS.gold, 0.7, 1.15, -d / 2 + t - 0.05));
+    this.schoolInteractables.push({
+      id: 'school',
+      name: 'Saída',
+      position: new THREE.Vector3(0, 0, -d / 2 + 2.2),
+      radius: 2.6,
+    });
+
+    // Reb Leyzer — à frente da turma, corredor acessível
+    const leyzer = this.addNpc(
+      'leyzer',
+      'Reb Leyzer',
+      'melamed',
+      0.2,
+      teachZ - 1.35,
+      true,
+      undefined,
+      this.schoolInterior,
+    );
+    leyzer.mesh.rotation.y = Math.PI;
+    leyzer.radius = 0.65;
+    if (leyzer.rig) {
+      leyzer.rig.armR.rotation.x = -1.5;
+      leyzer.rig.armR.rotation.z = -0.15;
+      leyzer.rig.armL.rotation.x = -0.35;
+    }
+
+    // Alunos sentados nas carteiras laterais
+    const pupils: { style: PersonStyle; x: number; z: number }[] = [
+      { style: 'motl', x: -5.2, z: 1.75 },
+      { style: 'berl', x: 5.2, z: 1.75 },
+      { style: 'leib', x: -5.2, z: -1.25 },
+      { style: 'mendl', x: 5.2, z: -1.25 },
+      { style: 'dina', x: -5.2, z: -4.25 },
+      { style: 'freyde', x: 5.2, z: -4.25 },
+    ];
+    for (const p of pupils) {
+      const rig = makePerson(p.style);
+      rig.root.position.set(p.x, 0.42, p.z);
+      rig.root.rotation.y = 0;
+      rig.legL.rotation.x = -1.15;
+      rig.legR.rotation.x = -1.15;
+      rig.armL.rotation.x = -0.55;
+      rig.armR.rotation.x = -0.55;
+      add(rig.root);
+      this.addCircle(p.x, p.z, 0.38);
+    }
+
+    this.buildingSchool = false;
+  }
+
+  private addSchoolBookPiles(
+    add: (o: THREE.Object3D) => void,
+    x: number,
+    z: number,
+    colors: number[],
+  ): void {
+    add(box(1.1, 0.7, 0.55, COLORS.wood, x, 0.35, z));
+    let y = 0.78;
+    for (let i = 0; i < 5; i++) {
+      const c = colors[i % colors.length]!;
+      add(box(0.55, 0.07, 0.4, c, x, y, z));
+      y += 0.08;
+    }
+    for (let i = 0; i < 4; i++) {
+      const c = colors[(i + 2) % colors.length]!;
+      const bh = 0.32 + (i % 2) * 0.06;
+      add(box(0.1, bh, 0.22, c, x - 0.35 + i * 0.18, 0.78 + bh / 2, z + 0.05));
+    }
+    this.addOrientedBox(x, z, 1.2, 0.7, 0);
+  }
+
+  private addSchoolDesk(
+    add: (o: THREE.Object3D) => void,
+    x: number,
+    z: number,
+  ): void {
+    add(box(1.25, 0.08, 0.65, COLORS.woodLight, x, 0.78, z));
+    add(box(0.08, 0.72, 0.08, COLORS.wood, x - 0.5, 0.36, z - 0.22));
+    add(box(0.08, 0.72, 0.08, COLORS.wood, x + 0.5, 0.36, z - 0.22));
+    add(box(0.08, 0.72, 0.08, COLORS.wood, x - 0.5, 0.36, z + 0.22));
+    add(box(0.08, 0.72, 0.08, COLORS.wood, x + 0.5, 0.36, z + 0.22));
+    add(box(0.3, 0.03, 0.22, 0xf5f0e6, x - 0.12, 0.84, z + 0.05));
+    add(box(0.18, 0.05, 0.14, 0x5a3a2a, x + 0.28, 0.84, z));
+    add(box(0.5, 0.08, 0.45, COLORS.wood, x, 0.42, z - 0.52));
+    add(box(0.5, 0.5, 0.08, COLORS.wood, x, 0.7, z - 0.72));
+    add(box(0.07, 0.4, 0.07, COLORS.wood, x - 0.18, 0.2, z - 0.38));
+    add(box(0.07, 0.4, 0.07, COLORS.wood, x + 0.18, 0.2, z - 0.38));
+    add(box(0.07, 0.4, 0.07, COLORS.wood, x - 0.18, 0.2, z - 0.65));
+    add(box(0.07, 0.4, 0.07, COLORS.wood, x + 0.18, 0.2, z - 0.65));
   }
 
   /** Oficina / alfaiate do shtetl. */
@@ -2194,9 +2560,11 @@ export class ShtetlWorld {
     this.buildBakery(-20, 8, 8, 6.5, 3.2);
     this.building(20, 8, 8, 6.5, 3.2);
 
+    // Escola do Reb Leyzer — fim oeste da rua horizontal (lado da sinagoga)
+    this.buildLeyzerSchool(-36, -8);
+
     // Casa norte + casas extras (espaçadas)
     this.building(0, 28, 8, 5.5, 3);
-    this.building(-28, -28, 7, 6, 2.9);
     this.building(22, -30, 7, 6, 2.9); // longe do lago sul
     // (sem casas em ±30,22 — ficavam grudadas nos prédios perto de Yankev/Tsipe)
 
@@ -2219,14 +2587,14 @@ export class ShtetlWorld {
       // Borda
       [-34, -34],
       [34, -34],
-      [-38, 0],
+      [-48, 8], // longe da escola (−36,−8)
       [38, 0],
       [-40, 40],
       [40, 40],
       [20, -40],
-      [-38, 16],
+      [-46, 18],
       [38, 16],
-      [-38, -14],
+      [-48, -22],
       [38, -14],
       // Gramados (fora das casas novas e do lago)
       [-14, 20],
@@ -2481,6 +2849,8 @@ export class ShtetlWorld {
       { x: 4, z: 33 },
       { x: -2, z: 32.5 },
     ]);
+
+    // Reb Leyzer vive dentro da escola (buildSchoolInterior)
   }
 
   private static readonly NPC_SOLID_R = 0.72;
@@ -2496,7 +2866,7 @@ export class ShtetlWorld {
     paused = false,
     playerPos?: { x: number; z: number },
   ): void {
-    if (this.inShul) return;
+    if (this.inShul || this.inSchool) return;
     const playerR = 0.55;
 
     for (const npc of this.npcs) {
@@ -2890,7 +3260,10 @@ export class ShtetlWorld {
 
   private npcInCurrentScene(npc: WorldNpc): boolean {
     const isShul = ShtetlWorld.SHUL_NPCS.has(npc.id);
-    return this.inShul ? isShul : !isShul;
+    const isSchool = ShtetlWorld.SCHOOL_NPCS.has(npc.id);
+    if (this.inShul) return isShul;
+    if (this.inSchool) return isSchool;
+    return !isShul && !isSchool;
   }
 
   collides(x: number, z: number, radius = 0.5): boolean {

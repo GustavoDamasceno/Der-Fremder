@@ -167,6 +167,24 @@ export class GameApp {
       return;
     }
 
+    if (target.id === 'school') {
+      if (this.world.isInSchoolScene()) {
+        this.world.setSchoolMode(false);
+        this.player.setPosition(this.world.spawnOutsideSchool());
+        this.player.facing = Math.PI;
+        this.player.setIndoor(false);
+        this.player.snapCamera();
+        SoundManager.get().setTrack('shtetl');
+      } else {
+        this.world.setSchoolMode(true);
+        this.player.setPosition(this.world.spawnInsideSchool());
+        this.player.facing = 0;
+        this.player.setIndoor(true);
+        this.player.snapCamera();
+      }
+      return;
+    }
+
     const tree = getDialogueFor(target.id as NpcId);
     if (!tree) {
       if (GameState.chapter === 4 && !GameState.flags.chapter4Photo) {
@@ -196,6 +214,12 @@ export class GameApp {
           this.ui.setHint('[ E ] Sair da sinagoga');
         } else {
           this.ui.setHint('[ E ] Entrar na sinagoga');
+        }
+      } else if (target.id === 'school') {
+        if (this.world.isInSchoolScene()) {
+          this.ui.setHint('[ E ] Sair da escola');
+        } else {
+          this.ui.setHint('[ E ] Entrar na escola');
         }
       } else if (target.id === 'photo') {
         this.ui.setHint('[ E ] Examinar o objeto');

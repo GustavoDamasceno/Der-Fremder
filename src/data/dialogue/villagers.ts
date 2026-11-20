@@ -1376,3 +1376,58 @@ export const motlChat: DialogueTree = {
     },
   },
 };
+
+/** Tutor de prática — minigames de iídiche ao lado da sinagoga. */
+export const leyzerChat: DialogueTree = {
+  id: 'leyzer-practice',
+  encounterTitle: 'Reb Leyzer quer falar com você!',
+  startId: 'intro',
+  turns: {
+    intro: {
+      id: 'intro',
+      kind: 'narration',
+      speaker: 'Reb Leyzer',
+      yiddish: 'Sholem aleikhem, talmid!',
+      portuguese:
+        'Um mestre gentil aponta um caderno. Ele oferece treino — sem pressão da história.',
+      next: 'ask',
+    },
+    ask: {
+      id: 'ask',
+      kind: 'choice',
+      speaker: 'Reb Leyzer',
+      yiddish: 'Vos vilstu iben?',
+      portuguese: 'O que você gostaria de praticar?',
+      prompt: 'Escolha um exercício',
+      options: [
+        {
+          text: 'Pronomes (ikh, du, er…)',
+          correct: true,
+          reaction: '“Gut! Mir shpiln mit di pronomen.”',
+          suspicionDelta: 0,
+          openPractice: 'pronouns',
+        },
+        {
+          text: 'Verbos (zayn, geyn, redn…)',
+          correct: true,
+          reaction: '“Yo. Di vertbn zaynen vikhtik.”',
+          suspicionDelta: 0,
+          openPractice: 'verbs',
+        },
+        {
+          text: 'Números (eyns, tsvey, dray…)',
+          correct: true,
+          reaction: '“Eyns, tsvey… lomir tseyln!”',
+          suspicionDelta: 0,
+          openPractice: 'numbers',
+        },
+        {
+          text: 'Agora não, obrigado',
+          correct: true,
+          reaction: '“Gut. Ven du bist greyt — ikh bin do.”',
+          suspicionDelta: 0,
+        },
+      ],
+    },
+  },
+};

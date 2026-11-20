@@ -1,4 +1,5 @@
 import type { DialogueTree } from '../data/dialogue/chapter1';
+import type { PracticeTopic } from '../data/practice';
 import { DialogueEngine } from '../systems/DialogueEngine';
 import { GameState, type EndingId } from '../state/GameState';
 import { secretFinale } from '../data/dialogue/chapter5';
@@ -9,6 +10,7 @@ import {
 import { GP, type GamepadInput } from '../input/GamepadInput';
 import type { TouchControls } from '../input/TouchControls';
 import { SoundManager } from '../audio/SoundManager';
+import { PracticeMinigame } from './PracticeMinigame';
 
 const ENDINGS: Record<
   EndingId,
@@ -45,6 +47,7 @@ export type UiMode =
   | 'banner'
   | 'playing'
   | 'dialogue'
+  | 'practice'
   | 'glossary'
   | 'chapterComplete'
   | 'gameOver'
@@ -74,6 +77,8 @@ export class UiController {
   private padNavUntil = 0;
   /** Trava A/Enter no UI até soltar (evita double-fire). */
   private uiConfirmHeld = false;
+  private pendingPractice: PracticeTopic | null = null;
+  private practiceGame: PracticeMinigame | null = null;
 
   private screenEl!: HTMLElement;
   private hudEl!: HTMLElement;
@@ -81,6 +86,7 @@ export class UiController {
   private dialogueEl!: HTMLElement;
   private reactionEl!: HTMLElement;
   private glossaryEl!: HTMLElement;
+  private practiceEl!: HTMLElement;
   private lockHintEl!: HTMLElement;
   private crosshairEl!: HTMLElement;
   private touch: TouchControls | null = null;
@@ -131,6 +137,7 @@ export class UiController {
         <ul id="glossary-list"></ul>
         <div class="close-tip">[ Tab ] / [ Esc ] Fechar</div>
       </div>
+      <div class="practice-overlay hidden" id="practice"></div>
       <div class="screen" id="screen"></div>
     `;
 
@@ -140,6 +147,7 @@ export class UiController {
     this.dialogueEl = this.$('dialogue');
     this.reactionEl = this.$('reaction');
     this.glossaryEl = this.$('glossary');
+    this.practiceEl = this.$('practice');
     this.lockHintEl = this.$('lock-hint');
     this.crosshairEl = this.$('crosshair');
 
@@ -163,6 +171,13 @@ export class UiController {
     window.addEventListener('keydown', (e) => {
       // Ignora repeat do teclado — evitava avançar/reabrir diálogo sozinho
       if (e.repeat) return;
+
+      if (this.mode === 'practice' && this.practiceGame) {
+        if (this.practiceGame.handleKey(e.code)) {
+          e.preventDefault();
+          return;
+        }
+      }
 
       if (this.mode === 'dialogue' && this.phase === 'turn' && this.engine?.isChoiceTurn()) {
         if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') {
@@ -221,7 +236,9 @@ export class UiController {
     }
 
     if (this.touch.consumeConfirm()) {
-      if (this.mode === 'dialogue' && this.phase === 'turn' && this.engine?.isChoiceTurn()) {
+      if (this.mode === 'practice') {
+        this.practiceGame?.handlePadConfirm();
+      } else if (this.mode === 'dialogue' && this.phase === 'turn' && this.engine?.isChoiceTurn()) {
         this.confirmOption();
       } else {
         this.onEnter();
@@ -236,6 +253,26 @@ export class UiController {
     const confirmPressed =
       !this.uiConfirmHeld && (pad.justPressed(GP.A) || pad.justPressed(GP.START));
     this.uiConfirmHeld = confirmDown;
+
+    if (this.mode === 'practice') {
+      const now = performance.now();
+      const canStickNav = now >= this.padNavUntil;
+      const move = pad.getMove();
+      const up =
+        pad.justPressed(GP.UP) || (canStickNav && move.z < -0.55);
+      const down =
+        pad.justPressed(GP.DOWN) || (canStickNav && move.z > 0.55);
+      if (up) {
+        this.practiceGame?.handlePadNav(-1);
+        this.padNavUntil = now + 220;
+      } else if (down) {
+        this.practiceGame?.handlePadNav(1);
+        this.padNavUntil = now + 220;
+      }
+      if (confirmPressed) this.practiceGame?.handlePadConfirm();
+      else if (pad.justPressed(GP.B)) this.practiceGame?.handleKey('Escape');
+      return;
+    }
 
     if (this.mode === 'dialogue' && this.phase === 'turn' && this.engine?.isChoiceTurn()) {
       const now = performance.now();
@@ -431,6 +468,7 @@ export class UiController {
     this.engine = new DialogueEngine(tree);
     this.phase = 'turn';
     this.pendingDone = false;
+    this.pendingPractice = null;
     this.hintEl.classList.add('hidden');
     this.lockHintEl.classList.add('hidden');
     this.glossaryEl.classList.add('hidden');
@@ -489,6 +527,7 @@ export class UiController {
 
     const result = this.engine.applyOption(option);
     this.pendingDone = result.done;
+    if (result.openPractice) this.pendingPractice = result.openPractice;
     this.phase = 'reaction';
     this.$('dlg-options').innerHTML = '';
     this.$('dlg-prompt').textContent = '';
@@ -505,7 +544,11 @@ export class UiController {
     if (result.learned.length) {
       msg += `\n\nAprendeu: ${result.learned.join(' · ')}`;
     }
-    msg += '\n\n[ Enter ]';
+    if (result.openPractice) {
+      msg += '\n\n[ Enter ] Abrir o exercício';
+    } else {
+      msg += '\n\n[ Enter ]';
+    }
 
     this.reactionEl.textContent = msg;
     this.reactionEl.classList.remove('hidden');
@@ -552,7 +595,27 @@ export class UiController {
       this.showSecretEnd();
       return;
     }
+    if (this.pendingPractice) {
+      const topic = this.pendingPractice;
+      this.pendingPractice = null;
+      this.startPractice(topic);
+      return;
+    }
     this.handlers.onDialogueFinished();
+  }
+
+  private startPractice(topic: PracticeTopic): void {
+    this.mode = 'practice';
+    this.hintEl.classList.add('hidden');
+    this.lockHintEl.classList.add('hidden');
+    this.crosshairEl.classList.add('hidden');
+    this.touch?.setGameplayVisible(!!this.touch?.isEnabled());
+    this.practiceGame?.destroy();
+    this.practiceGame = new PracticeMinigame(this.practiceEl, topic, () => {
+      this.practiceGame = null;
+      this.refreshHud();
+      this.handlers.onDialogueFinished();
+    });
   }
 
   toggleGlossary(): void {
@@ -652,6 +715,9 @@ E o shtetl inteiro sorri.</p>
     this.dialogueEl.classList.add('hidden');
     this.reactionEl.classList.add('hidden');
     this.glossaryEl.classList.add('hidden');
+    this.practiceEl.classList.add('hidden');
+    this.practiceGame?.destroy();
+    this.practiceGame = null;
     this.lockHintEl.classList.add('hidden');
     this.crosshairEl.classList.add('hidden');
   }
