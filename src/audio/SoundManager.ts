@@ -17,6 +17,8 @@ export class SoundManager {
   private current: MusicTrack = 'shtetl';
   private enabled = true;
   private unlocked = false;
+  /** true na biblioteca — bloqueia play() assíncrono (bug comum no celular). */
+  private scenePaused = false;
   private listeners = new Set<(enabled: boolean) => void>();
 
   static get(): SoundManager {
@@ -71,14 +73,28 @@ export class SoundManager {
     }
   }
 
+  private canPlay(): boolean {
+    return this.enabled && this.unlocked && !this.scenePaused;
+  }
+
+  private silenceAll(): void {
+    for (const a of Object.values(this.tracks)) {
+      if (!a) continue;
+      a.pause();
+      a.muted = true;
+      a.volume = 0;
+    }
+  }
+
   /** Troca a faixa (shtetl ↔ shul). */
   setTrack(track: MusicTrack): void {
     if (track === this.current && this.tracks[track]) {
-      // Já é a faixa atual — só garante play se estiver ligado
-      if (this.enabled && this.unlocked) {
+      if (this.canPlay()) {
         const a = this.ensure(track);
         this.applyMuteState(a);
         void a.play().catch(() => undefined);
+      } else if (this.scenePaused) {
+        this.silenceAll();
       }
       return;
     }
@@ -95,11 +111,13 @@ export class SoundManager {
 
     this.current = track;
     const next = this.ensure(track);
-    this.applyMuteState(next);
-    if (this.enabled && this.unlocked) {
+    if (this.canPlay()) {
+      this.applyMuteState(next);
       void next.play().catch(() => undefined);
     } else {
       next.pause();
+      next.muted = true;
+      next.volume = 0;
     }
   }
 
@@ -110,28 +128,23 @@ export class SoundManager {
     this.ensure('shtetl');
     this.ensure('shul');
     const audio = this.ensure(this.current);
-    this.applyMuteState(audio);
-    if (this.enabled) {
+    if (this.canPlay()) {
+      this.applyMuteState(audio);
       void audio.play().catch(() => undefined);
     } else {
-      audio.pause();
+      this.silenceAll();
     }
   }
 
   setEnabled(on: boolean): void {
     this.enabled = on;
     localStorage.setItem(STORAGE_KEY, on ? '1' : '0');
-    const audio = this.ensure(this.current);
-    if (on) {
+    if (on && this.canPlay()) {
+      const audio = this.ensure(this.current);
       this.applyMuteState(audio);
-      if (this.unlocked) void audio.play().catch(() => undefined);
+      void audio.play().catch(() => undefined);
     } else {
-      for (const a of Object.values(this.tracks)) {
-        if (!a) continue;
-        a.pause();
-        a.muted = true;
-        a.volume = 0;
-      }
+      this.silenceAll();
     }
     this.notify();
   }
@@ -142,12 +155,15 @@ export class SoundManager {
     return this.enabled;
   }
 
+  /** Pausa BGM (biblioteca). Resiste a play() atrasado no mobile. */
   pause(): void {
-    for (const a of Object.values(this.tracks)) a?.pause();
+    this.scenePaused = true;
+    this.silenceAll();
   }
 
   resume(): void {
-    if (!this.enabled || !this.unlocked) return;
+    this.scenePaused = false;
+    if (!this.canPlay()) return;
     const audio = this.ensure(this.current);
     this.applyMuteState(audio);
     void audio.play().catch(() => undefined);

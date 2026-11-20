@@ -18,9 +18,10 @@ import {
 
 export const LIBRARY_MAX_PLAYERS = 10;
 
-/** Volume cheio até esta distância; some ao chegar em VOICE_FAR. */
-const VOICE_NEAR = 2.8;
-const VOICE_FAR = 13;
+/** Volume cheio até esta distância; some ao chegar em VOICE_FAR.
+ *  Biblioteca é grande (~32×28) — ranges curtos silenciavam quem estava longe. */
+const VOICE_NEAR = 10;
+const VOICE_FAR = 36;
 
 export type PeerPresence = {
   name: string;
@@ -48,6 +49,8 @@ type PeerAudioGraph = {
   source: MediaStreamAudioSourceNode;
   analyser: AnalyserNode;
   data: Uint8Array;
+  /** Clone só para o analyser (não “rouba” o stream do <audio>). */
+  analyseStream?: MediaStream;
 };
 
 const APP_ID = 'der-fremder.library';
@@ -292,7 +295,11 @@ export class LibraryRoom {
     handlers.onCoopMatch?.(this.coopState.get());
 
     this.unsubs.push(
-      room.onUserJoin(() => handlers.onPeerCount(this.playerCount)),
+      room.onUserJoin(({ userId }) => {
+        handlers.onPeerCount(this.playerCount);
+        // Quem já está com mic ligado precisa reenviar o stream ao novato.
+        void this.pushMicToUser(userId);
+      }),
     );
     this.unsubs.push(
       room.onUserLeave(({ userId }) => {
@@ -307,6 +314,8 @@ export class LibraryRoom {
       room.onPeerStream((stream, { userId }) => {
         this.attachPeerAudio(userId, stream);
         handlers.onPeerStream(userId, stream);
+        // Quem recebe stream também destrava reprodução (gesto recente no mobile ajuda).
+        void this.unlockAudio();
       }),
     );
 
@@ -684,22 +693,15 @@ export class LibraryRoom {
           this.handlers?.onError('Permissão de microfone negada.');
           return false;
         }
-        const stream = this.micStream;
-        await this.room.addStream(stream);
-        this.unsubs.push(
-          this.room.onPeerJoin(({ peerId }) => {
-            if (this.micStream && this.room) {
-              void this.room.addStream(this.micStream, { target: peerId });
-            }
-          }),
-        );
-        this.hookLocalAnalyser(stream);
+        this.hookLocalAnalyser(this.micStream);
       }
       for (const track of this.micStream.getAudioTracks()) {
         track.enabled = true;
       }
       this.micEnabled = true;
       await this.unlockAudio();
+      // Envia/renegocia com todo mundo que já está na sala.
+      await this.broadcastMic();
     } else {
       if (this.micStream) {
         for (const track of this.micStream.getAudioTracks()) {
@@ -711,6 +713,32 @@ export class LibraryRoom {
 
     this.publish({});
     return this.micEnabled;
+  }
+
+  /** Empurra o mic local para um userId específico (novato na sala). */
+  private async pushMicToUser(userId: string): Promise<void> {
+    if (!this.room || !this.micStream || !this.micEnabled) return;
+    if (!userId || userId === this.selfUserId) return;
+    try {
+      await this.room.addStream(this.micStream, { target: userId });
+    } catch {
+      /* ignore — peer pode ter saído */
+    }
+  }
+
+  /** Empurra o mic para todos os usuários atuais. */
+  private async broadcastMic(): Promise<void> {
+    if (!this.room || !this.micStream || !this.micEnabled) return;
+    try {
+      await this.room.addStream(this.micStream);
+    } catch {
+      /* ignore */
+    }
+    const users = this.room.getUsers();
+    for (const userId of Object.keys(users)) {
+      if (userId === this.selfUserId) continue;
+      await this.pushMicToUser(userId);
+    }
   }
 
   /**
@@ -853,31 +881,44 @@ export class LibraryRoom {
     this.detachPeerAudio(userId);
     void this.unlockAudio();
 
-    // <audio> autoplay — Chrome desktop bloqueia Web Audio sem gesto;
-    // play() no elemento costuma funcionar melhor após unlock.
+    // <audio> toca a voz. No iOS/Chrome mobile, createMediaStreamSource no
+    // MESMO stream pode “roubar” o áudio — por isso o analyser usa um clone.
     const el = document.createElement('audio');
     el.autoplay = true;
     el.setAttribute('playsinline', 'true');
     (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
     el.srcObject = stream;
-    el.volume = 0;
+    el.volume = 0.01; // volume mínimo inicial — updateSpatial sobe depois
     el.style.display = 'none';
     document.body.appendChild(el);
-    void el.play().catch(() => undefined);
+    const tryPlay = () => {
+      void el.play().catch(() => undefined);
+    };
+    tryPlay();
+    el.addEventListener('loadedmetadata', tryPlay);
+    el.addEventListener('canplay', tryPlay);
 
     const ctx = this.ensureAudioCtx();
-    const source = ctx.createMediaStreamSource(stream);
+    let source: MediaStreamAudioSourceNode;
+    let analyseStream: MediaStream | undefined;
+    try {
+      analyseStream = stream.clone();
+      source = ctx.createMediaStreamSource(analyseStream);
+    } catch {
+      source = ctx.createMediaStreamSource(stream);
+      analyseStream = undefined;
+    }
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.55;
     source.connect(analyser);
-    // Não liga no destination — evita áudio duplicado (só o <audio> toca)
 
     this.peerAudio.set(userId, {
       el,
       source,
       analyser,
       data: new Uint8Array(analyser.fftSize),
+      analyseStream,
     });
   }
 
@@ -889,6 +930,9 @@ export class LibraryRoom {
       graph.analyser.disconnect();
     } catch {
       /* ignore */
+    }
+    if (graph.analyseStream) {
+      for (const t of graph.analyseStream.getTracks()) t.stop();
     }
     try {
       graph.el.pause();

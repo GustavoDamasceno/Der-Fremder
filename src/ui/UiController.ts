@@ -473,7 +473,7 @@ export class UiController {
     `;
   }
 
-  enterPlaying(): void {
+  enterPlaying(opts?: { resumeMusic?: boolean }): void {
     this.mode = 'playing';
     this.screenEl.classList.add('hidden');
     this.hudEl.classList.remove('hidden');
@@ -484,7 +484,7 @@ export class UiController {
       this.lockHintEl.textContent =
         'Joystick andar · E interagir · OK confirmar · ☰ glossário';
     }
-    SoundManager.get().resume();
+    if (opts?.resumeMusic !== false) SoundManager.get().resume();
     this.refreshHud();
   }
 

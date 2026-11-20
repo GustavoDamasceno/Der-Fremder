@@ -300,7 +300,9 @@ export class GameApp {
       this.player.setIndoor(true, 'library');
       this.player.snapCamera();
       this.libraryPresence.attachLocalName(this.playerRig.root, joined.name, false);
-      this.ui.enterPlaying();
+      // Pausa antes do enterPlaying — no celular o play() atrasado religava a BGM.
+      SoundManager.get().pause();
+      this.ui.enterPlaying({ resumeMusic: false });
       this.ui.showLibraryHud(joined.code, this.libraryRoom.playerCount);
       SoundManager.get().pause();
       this.interactBlocked = true;
