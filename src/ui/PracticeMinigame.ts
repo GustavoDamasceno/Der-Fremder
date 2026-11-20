@@ -1,40 +1,41 @@
 import {
+  LEVEL_CFG,
+  LEVEL_LABELS,
   PRACTICE_TITLES,
-  buildMemoryPairs,
-  buildQuiz,
-  type PracticePair,
+  buildArcadeRounds,
+  type ArcadeRound,
+  type PracticeLevel,
   type PracticeTopic,
-  type QuizQuestion,
 } from '../data/practice';
 import { GameState } from '../state/GameState';
 
 type CloseInfo = { score: number; total: number; learned: number };
+type Phase = 'level' | 'play' | 'resolve' | 'result';
 
 /**
- * Popup 2D educacional:
- * - pronomes → memória (combinar iídiche ↔ português)
- * - verbos / números → quiz de múltipla escolha
+ * Minigames arcade para crianças:
+ * - pronomes → Chão que Cai (plataformas)
+ * - verbos → Portas da Resposta
+ * - números → Corrida a Cavalo
  */
 export class PracticeMinigame {
   private root: HTMLElement;
   private topic: PracticeTopic;
   private onClose: (info: CloseInfo) => void;
+  private level: PracticeLevel = 'medium';
+  private phase: Phase = 'level';
   private score = 0;
   private total = 0;
   private learned = 0;
   private selected = 0;
   private choiceCount = 0;
-  private locked = false;
-  private phase: 'play' | 'result' = 'play';
-
-  // memória
-  private cards: { id: number; text: string; pairId: number; side: 'yi' | 'pt' }[] = [];
-  private flipped: number[] = [];
-  private matched = new Set<number>();
-
-  // quiz
-  private questions: QuizQuestion[] = [];
+  private rounds: ArcadeRound[] = [];
   private qIndex = 0;
+  private locked = false;
+  private timerRaf = 0;
+  private timerStart = 0;
+  private timeLimit = 3600;
+  private runnerProg = 0;
 
   constructor(
     host: HTMLElement,
@@ -45,16 +46,15 @@ export class PracticeMinigame {
     this.topic = topic;
     this.onClose = onClose;
     this.root.classList.remove('hidden');
-    if (topic === 'pronouns') this.startMemory();
-    else this.startQuiz();
+    this.showLevelSelect();
   }
 
   destroy(): void {
+    cancelAnimationFrame(this.timerRaf);
     this.root.classList.add('hidden');
     this.root.innerHTML = '';
   }
 
-  /** Teclado / gamepad: setas e Enter. Retorna true se consumiu. */
   handleKey(code: string): boolean {
     if (code === 'Escape') {
       this.finish();
@@ -67,34 +67,56 @@ export class PracticeMinigame {
       }
       return true;
     }
-    if (this.locked) return true;
-    if (this.topic === 'pronouns') return false;
+    if (this.phase === 'level') {
+      if (code === 'ArrowLeft' || code === 'KeyA') {
+        this.moveLevel(-1);
+        return true;
+      }
+      if (code === 'ArrowRight' || code === 'KeyD') {
+        this.moveLevel(1);
+        return true;
+      }
+      if (code === 'Enter' || code === 'Space') {
+        this.pickLevel(['easy', 'medium', 'hard'][this.selected] as PracticeLevel);
+        return true;
+      }
+      const digit = ['Digit1', 'Digit2', 'Digit3'].indexOf(code);
+      if (digit >= 0) {
+        this.pickLevel(['easy', 'medium', 'hard'][digit] as PracticeLevel);
+        return true;
+      }
+      return true;
+    }
+    if (this.phase !== 'play' || this.locked) return true;
 
-    if (code === 'ArrowUp' || code === 'KeyW') {
+    if (code === 'ArrowLeft' || code === 'KeyA') {
       this.moveChoice(-1);
       return true;
     }
-    if (code === 'ArrowDown' || code === 'KeyS') {
+    if (code === 'ArrowRight' || code === 'KeyD') {
       this.moveChoice(1);
       return true;
     }
     if (code === 'Enter' || code === 'Space') {
-      this.confirmChoice();
+      this.lockInChoice();
       return true;
     }
     const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4'].indexOf(code);
-    if (digit >= 0) {
+    if (digit >= 0 && digit < this.choiceCount) {
       this.selected = digit;
       this.refreshChoiceHighlight();
-      this.confirmChoice();
+      this.lockInChoice();
       return true;
     }
     return false;
   }
 
   handlePadNav(delta: number): void {
-    if (this.phase !== 'play' || this.topic === 'pronouns' || this.locked) return;
-    this.moveChoice(delta);
+    if (this.phase === 'level') {
+      this.moveLevel(delta);
+      return;
+    }
+    if (this.phase === 'play' && !this.locked) this.moveChoice(delta);
   }
 
   handlePadConfirm(): void {
@@ -102,151 +124,195 @@ export class PracticeMinigame {
       this.finish();
       return;
     }
-    if (this.topic === 'pronouns' || this.locked) return;
-    this.confirmChoice();
+    if (this.phase === 'level') {
+      this.pickLevel(['easy', 'medium', 'hard'][this.selected] as PracticeLevel);
+      return;
+    }
+    if (this.phase === 'play' && !this.locked) this.lockInChoice();
   }
 
-  // ——— Memória (pronomes) ———
+  // ——— Nível ———
 
-  private startMemory(): void {
-    const pairs = buildMemoryPairs(4);
-    this.total = pairs.length;
-    this.cards = [];
-    let id = 0;
-    pairs.forEach((p, pairId) => {
-      this.cards.push({ id: id++, text: p.yi, pairId, side: 'yi' });
-      this.cards.push({ id: id++, text: p.pt, pairId, side: 'pt' });
-    });
-    this.cards = shuffle(this.cards);
-    this.renderMemory();
-  }
-
-  private renderMemory(): void {
-    const title = PRACTICE_TITLES.pronouns;
+  private showLevelSelect(): void {
+    this.phase = 'level';
+    this.selected = 1;
+    const title = PRACTICE_TITLES[this.topic];
     this.root.innerHTML = `
-      <div class="practice-panel">
+      <div class="practice-panel practice-arcade">
         <div class="practice-head">
-          <h2>${title.yi}</h2>
-          <p>Combine o pronome em iídiche com o português.</p>
-          <span class="practice-score">Pares ${this.matched.size / 2}/${this.total}</span>
+          <h2>${title.game}</h2>
+          <p>${title.pt} · Escolha o nível</p>
         </div>
-        <div class="practice-memory" id="prac-memory"></div>
+        <div class="practice-levels" id="prac-levels">
+          <button type="button" class="practice-level" data-lv="easy">
+            <span class="lv-name">Fácil</span>
+            <span class="lv-tip">${LEVEL_LABELS.easy.tip}</span>
+          </button>
+          <button type="button" class="practice-level selected" data-lv="medium">
+            <span class="lv-name">Médio</span>
+            <span class="lv-tip">${LEVEL_LABELS.medium.tip}</span>
+          </button>
+          <button type="button" class="practice-level" data-lv="hard">
+            <span class="lv-name">Difícil</span>
+            <span class="lv-tip">${LEVEL_LABELS.hard.tip}</span>
+          </button>
+        </div>
         <div class="practice-foot">
           <button type="button" class="practice-exit" id="prac-exit">Sair [ Esc ]</button>
+          <span class="practice-tip">← → · Enter</span>
         </div>
       </div>
     `;
-    const grid = this.root.querySelector('#prac-memory')!;
-    this.cards.forEach((card, idx) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'practice-card';
-      btn.dataset.idx = String(idx);
-      if (this.matched.has(card.id) || this.flipped.includes(idx)) {
-        btn.classList.add('flipped');
-        btn.textContent = card.text;
-        if (this.matched.has(card.id)) btn.classList.add('matched');
-      } else {
-        btn.textContent = '?';
-      }
-      btn.addEventListener('click', () => this.flipCard(idx));
-      grid.appendChild(btn);
+    this.root.querySelectorAll('.practice-level').forEach((btn, i) => {
+      btn.addEventListener('click', () => {
+        this.selected = i;
+        this.pickLevel((btn as HTMLElement).dataset.lv as PracticeLevel);
+      });
+      btn.addEventListener('mouseenter', () => {
+        this.selected = i;
+        this.refreshLevelHighlight();
+      });
     });
     this.root.querySelector('#prac-exit')!.addEventListener('click', () => this.finish());
   }
 
-  private flipCard(idx: number): void {
-    if (this.locked) return;
-    const card = this.cards[idx];
-    if (!card || this.matched.has(card.id) || this.flipped.includes(idx)) return;
-    if (this.flipped.length >= 2) return;
-
-    this.flipped.push(idx);
-    this.renderMemory();
-
-    if (this.flipped.length < 2) return;
-
-    const a = this.cards[this.flipped[0]!]!;
-    const b = this.cards[this.flipped[1]!]!;
-    this.locked = true;
-
-    if (a.pairId === b.pairId && a.side !== b.side) {
-      this.matched.add(a.id);
-      this.matched.add(b.id);
-      this.score++;
-      const pair = findPair(a, b);
-      if (pair && GameState.addVocab({ yiddish: pair.yi, portuguese: pair.pt })) {
-        this.learned++;
-      }
-      setTimeout(() => {
-        this.flipped = [];
-        this.locked = false;
-        if (this.matched.size === this.cards.length) this.showResult();
-        else this.renderMemory();
-      }, 420);
-    } else {
-      setTimeout(() => {
-        this.flipped = [];
-        this.locked = false;
-        this.renderMemory();
-      }, 700);
-    }
+  private moveLevel(delta: number): void {
+    this.selected = (this.selected + delta + 3) % 3;
+    this.refreshLevelHighlight();
   }
 
-  // ——— Quiz (verbos / números) ———
+  private refreshLevelHighlight(): void {
+    this.root.querySelectorAll('.practice-level').forEach((btn, i) => {
+      btn.classList.toggle('selected', i === this.selected);
+    });
+  }
 
-  private startQuiz(): void {
-    this.questions = buildQuiz(this.topic, 6);
-    this.total = this.questions.length;
+  private pickLevel(level: PracticeLevel): void {
+    this.level = level;
+    const cfg = LEVEL_CFG[level];
+    this.timeLimit = cfg.timeMs;
+    this.rounds = buildArcadeRounds(this.topic, level);
+    this.total = this.rounds.length;
+    this.score = 0;
+    this.learned = 0;
     this.qIndex = 0;
-    this.renderQuiz();
+    this.renderRound();
   }
 
-  private renderQuiz(): void {
-    const q = this.questions[this.qIndex];
+  // ——— Rodada ———
+
+  private renderRound(): void {
+    cancelAnimationFrame(this.timerRaf);
+    const q = this.rounds[this.qIndex];
     if (!q) {
       this.showResult();
       return;
     }
-    const title = PRACTICE_TITLES[this.topic];
+    this.phase = 'play';
+    this.locked = false;
     this.choiceCount = q.choices.length;
-    this.selected = 0;
+    this.selected = Math.floor(this.choiceCount / 2);
+    this.runnerProg = 0;
+    this.timerStart = performance.now();
+
+    const title = PRACTICE_TITLES[this.topic];
+    const modeClass =
+      this.topic === 'pronouns'
+        ? 'mode-fall'
+        : this.topic === 'verbs'
+          ? 'mode-doors'
+          : 'mode-race';
+
     this.root.innerHTML = `
-      <div class="practice-panel">
+      <div class="practice-panel practice-arcade ${modeClass}">
         <div class="practice-head">
-          <h2>${title.yi} · ${title.pt}</h2>
-          <p>Pergunta ${this.qIndex + 1} de ${this.total} · Acertos ${this.score}</p>
+          <h2>${title.game}</h2>
+          <p>Rodada ${this.qIndex + 1}/${this.total} · Acertos ${this.score} · ${LEVEL_LABELS[this.level].pt}</p>
         </div>
         <div class="practice-prompt">
           <div class="practice-big">${escapeHtml(q.prompt)}</div>
-          ${q.sub ? `<div class="practice-sub">${escapeHtml(q.sub)}</div>` : ''}
+          <div class="practice-sub">${escapeHtml(q.sub)}</div>
         </div>
-        <div class="practice-choices" id="prac-choices"></div>
+        <div class="arcade-timer"><i id="prac-timer"></i></div>
+        <div class="arcade-stage" id="prac-stage"></div>
         <div class="practice-foot">
           <button type="button" class="practice-exit" id="prac-exit">Sair [ Esc ]</button>
-          <span class="practice-tip">1–4 / ↑↓ · Enter</span>
+          <span class="practice-tip">← → escolher · Enter confirmar · 1–4</span>
         </div>
       </div>
     `;
-    const box = this.root.querySelector('#prac-choices')!;
-    const labels = ['1', '2', '3', '4'];
-    q.choices.forEach((c, i) => {
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = 'practice-choice';
-      btn.textContent = `${labels[i]}) ${c}`;
-      btn.addEventListener('click', () => {
-        this.selected = i;
-        this.confirmChoice();
-      });
-      btn.addEventListener('mouseenter', () => {
-        this.selected = i;
-        this.refreshChoiceHighlight();
-      });
-      box.appendChild(btn);
-    });
+
+    const stage = this.root.querySelector('#prac-stage')!;
+    if (this.topic === 'pronouns') this.buildFallStage(stage, q);
+    else if (this.topic === 'verbs') this.buildDoorsStage(stage, q);
+    else this.buildRaceStage(stage, q);
+
     this.refreshChoiceHighlight();
     this.root.querySelector('#prac-exit')!.addEventListener('click', () => this.finish());
+    this.tickTimer();
+  }
+
+  private buildFallStage(stage: Element, q: ArcadeRound): void {
+    stage.innerHTML = `
+      <div class="fall-sky"></div>
+      <div class="fall-hero" id="prac-hero">🧒</div>
+      <div class="fall-platforms" id="prac-opts"></div>
+    `;
+    const opts = stage.querySelector('#prac-opts')!;
+    q.choices.forEach((c, i) => {
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'fall-tile practice-opt';
+      tile.innerHTML = `<span class="opt-key">${i + 1}</span><span class="opt-text">${escapeHtml(c)}</span>`;
+      tile.addEventListener('click', () => {
+        this.selected = i;
+        this.lockInChoice();
+      });
+      opts.appendChild(tile);
+    });
+  }
+
+  private buildDoorsStage(stage: Element, q: ArcadeRound): void {
+    stage.innerHTML = `
+      <div class="doors-track">
+        <div class="doors-runner" id="prac-hero">🏃</div>
+        <div class="doors-wall" id="prac-opts"></div>
+      </div>
+    `;
+    const opts = stage.querySelector('#prac-opts')!;
+    q.choices.forEach((c, i) => {
+      const door = document.createElement('button');
+      door.type = 'button';
+      door.className = 'door-panel practice-opt';
+      door.innerHTML = `<span class="opt-key">${i + 1}</span><span class="opt-text">${escapeHtml(c)}</span>`;
+      door.addEventListener('click', () => {
+        this.selected = i;
+        this.lockInChoice();
+      });
+      opts.appendChild(door);
+    });
+  }
+
+  private buildRaceStage(stage: Element, q: ArcadeRound): void {
+    stage.innerHTML = `
+      <div class="race-track">
+        <div class="race-dust"></div>
+        <div class="race-horse" id="prac-hero">🐴</div>
+        <div class="race-gates" id="prac-opts"></div>
+      </div>
+    `;
+    const opts = stage.querySelector('#prac-opts')!;
+    q.choices.forEach((c, i) => {
+      const gate = document.createElement('button');
+      gate.type = 'button';
+      gate.className = 'race-gate practice-opt';
+      gate.innerHTML = `<span class="opt-key">${i + 1}</span><span class="opt-text">${escapeHtml(c)}</span>`;
+      gate.addEventListener('click', () => {
+        this.selected = i;
+        this.lockInChoice();
+      });
+      opts.appendChild(gate);
+    });
   }
 
   private moveChoice(delta: number): void {
@@ -257,97 +323,129 @@ export class PracticeMinigame {
   }
 
   private refreshChoiceHighlight(): void {
-    const buttons = this.root.querySelectorAll('.practice-choice');
-    buttons.forEach((btn, i) => {
-      btn.classList.toggle('selected', i === this.selected);
+    const opts = this.root.querySelectorAll('.practice-opt');
+    opts.forEach((el, i) => {
+      el.classList.toggle('selected', i === this.selected);
     });
+    // Hero encima da opção selecionada (chão que cai)
+    if (this.topic === 'pronouns') {
+      const hero = this.root.querySelector('#prac-hero') as HTMLElement | null;
+      const tile = opts[this.selected] as HTMLElement | undefined;
+      if (hero && tile) {
+        const stage = this.root.querySelector('#prac-stage') as HTMLElement;
+        const sr = stage.getBoundingClientRect();
+        const tr = tile.getBoundingClientRect();
+        hero.style.left = `${tr.left - sr.left + tr.width / 2}px`;
+      }
+    }
   }
 
-  private confirmChoice(): void {
-    if (this.locked) return;
-    const q = this.questions[this.qIndex];
-    if (!q) return;
-    const pick = q.choices[this.selected];
-    if (pick == null) return;
+  private tickTimer = (): void => {
+    if (this.phase !== 'play' || this.locked) return;
+    const elapsed = performance.now() - this.timerStart;
+    const pct = Math.max(0, 1 - elapsed / this.timeLimit);
+    const bar = this.root.querySelector('#prac-timer') as HTMLElement | null;
+    if (bar) {
+      bar.style.width = `${pct * 100}%`;
+      bar.classList.toggle('urgent', pct < 0.28);
+    }
 
+    // Runner / cavalo avança com o tempo
+    if (this.topic !== 'pronouns') {
+      this.runnerProg = 1 - pct;
+      const hero = this.root.querySelector('#prac-hero') as HTMLElement | null;
+      if (hero) {
+        hero.style.transform = `translateX(${this.runnerProg * 70}%)`;
+      }
+    } else {
+      this.refreshChoiceHighlight();
+    }
+
+    if (elapsed >= this.timeLimit) {
+      this.lockInChoice();
+      return;
+    }
+    this.timerRaf = requestAnimationFrame(this.tickTimer);
+  };
+
+  private lockInChoice(): void {
+    if (this.locked || this.phase !== 'play') return;
     this.locked = true;
-    const buttons = this.root.querySelectorAll('.practice-choice');
-    buttons.forEach((btn, i) => {
+    this.phase = 'resolve';
+    cancelAnimationFrame(this.timerRaf);
+
+    const q = this.rounds[this.qIndex]!;
+    const pick = q.choices[this.selected] ?? '';
+    const ok = pick === q.answer;
+    const opts = this.root.querySelectorAll('.practice-opt');
+
+    opts.forEach((el, i) => {
       const text = q.choices[i]!;
-      if (text === q.answer) btn.classList.add('correct');
-      else if (i === this.selected) btn.classList.add('wrong');
+      if (text === q.answer) el.classList.add('correct');
+      else {
+        el.classList.add('wrong');
+        if (this.topic === 'pronouns') el.classList.add('falling');
+      }
+      if (i === this.selected && !ok) el.classList.add('picked-wrong');
     });
 
-    const ok = pick === q.answer;
+    if (this.topic !== 'pronouns') {
+      const hero = this.root.querySelector('#prac-hero') as HTMLElement | null;
+      if (hero) {
+        hero.classList.add(ok ? 'pass' : 'bump');
+        hero.style.transform = `translateX(88%)`;
+      }
+    } else {
+      const hero = this.root.querySelector('#prac-hero') as HTMLElement | null;
+      if (hero) hero.classList.add(ok ? 'safe' : 'fall');
+    }
+
     if (ok) {
       this.score++;
       if (GameState.addVocab(q.learn)) this.learned++;
-      else GameState.adjustReputation(1);
-    } else {
-      GameState.adjustSuspicion(0); // sem punição forte — é treino
     }
 
     setTimeout(() => {
-      this.locked = false;
       this.qIndex++;
-      if (this.qIndex >= this.questions.length) this.showResult();
-      else this.renderQuiz();
-    }, 750);
+      this.renderRound();
+    }, ok ? 750 : 950);
   }
 
-  // ——— Resultado ———
-
   private showResult(): void {
+    cancelAnimationFrame(this.timerRaf);
     this.phase = 'result';
     const title = PRACTICE_TITLES[this.topic];
     const pct = this.total ? Math.round((this.score / this.total) * 100) : 0;
     let msg = 'Gut gemakht!';
-    if (pct < 50) msg = 'Nisht shlekht — continue treinando.';
-    else if (pct < 80) msg = 'Yo! Você está aprendendo.';
-    else msg = 'Mamesh gut! Reb Leyzer ficaria orgulhoso.';
+    if (pct < 40) msg = 'Quase! Tenta de novo no fácil.';
+    else if (pct < 70) msg = 'Yo! Você está pegando o jeito.';
+    else if (pct < 100) msg = 'Mamesh gut! Quase perfeito.';
+    else msg = 'Campeão do kheyder! ⭐';
 
     this.root.innerHTML = `
-      <div class="practice-panel practice-result">
+      <div class="practice-panel practice-arcade practice-result">
         <div class="practice-head">
-          <h2>${title.pt}</h2>
+          <h2>${title.game}</h2>
           <p>${msg}</p>
         </div>
         <div class="practice-prompt">
           <div class="practice-big">${this.score}/${this.total}</div>
-          <div class="practice-sub">${pct}% · ${this.learned} palavra(s) nova(s) no glossário</div>
+          <div class="practice-sub">${LEVEL_LABELS[this.level].pt} · ${pct}% · ${this.learned} palavra(s) nova(s)</div>
         </div>
         <div class="practice-foot">
           <button type="button" class="practice-exit practice-done" id="prac-done">Pronto [ Enter ]</button>
         </div>
       </div>
     `;
-    this.choiceCount = 0;
     this.root.querySelector('#prac-done')!.addEventListener('click', () => this.finish());
   }
 
   private finish(): void {
+    cancelAnimationFrame(this.timerRaf);
     const info = { score: this.score, total: this.total, learned: this.learned };
     this.destroy();
     this.onClose(info);
   }
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j]!, a[i]!];
-  }
-  return a;
-}
-
-function findPair(
-  a: { text: string; side: 'yi' | 'pt' },
-  b: { text: string; side: 'yi' | 'pt' },
-): PracticePair | null {
-  const yi = a.side === 'yi' ? a.text : b.text;
-  const pt = a.side === 'pt' ? a.text : b.text;
-  return { yi, pt };
 }
 
 function escapeHtml(s: string): string {

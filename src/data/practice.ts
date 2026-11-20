@@ -1,11 +1,27 @@
 import type { VocabEntry } from '../state/GameState';
 
 export type PracticeTopic = 'pronouns' | 'verbs' | 'numbers';
+export type PracticeLevel = 'easy' | 'medium' | 'hard';
 
-export const PRACTICE_TITLES: Record<PracticeTopic, { yi: string; pt: string }> = {
-  pronouns: { yi: 'Pronomen', pt: 'Pronomes' },
-  verbs: { yi: 'Vertbn', pt: 'Verbos' },
-  numbers: { yi: 'Tsifern', pt: 'Números' },
+export const PRACTICE_TITLES: Record<PracticeTopic, { yi: string; pt: string; game: string }> = {
+  pronouns: { yi: 'Pronomen', pt: 'Pronomes', game: 'Chão que Cai!' },
+  verbs: { yi: 'Vertbn', pt: 'Verbos', game: 'Portas da Resposta!' },
+  numbers: { yi: 'Tsifern', pt: 'Números', game: 'Corrida a Cavalo!' },
+};
+
+export const LEVEL_LABELS: Record<PracticeLevel, { pt: string; tip: string }> = {
+  easy: { pt: 'Fácil', tip: 'Mais tempo · 2 opções' },
+  medium: { pt: 'Médio', tip: 'Tempo normal · 3 opções' },
+  hard: { pt: 'Difícil', tip: 'Rápido · 4 opções' },
+};
+
+export const LEVEL_CFG: Record<
+  PracticeLevel,
+  { rounds: number; choices: number; timeMs: number }
+> = {
+  easy: { rounds: 5, choices: 2, timeMs: 5200 },
+  medium: { rounds: 6, choices: 3, timeMs: 3600 },
+  hard: { rounds: 8, choices: 4, timeMs: 2400 },
 };
 
 export type PracticePair = {
@@ -16,25 +32,25 @@ export type PracticePair = {
 
 export const PRONOUNS: PracticePair[] = [
   { yi: 'ikh', pt: 'eu' },
-  { yi: 'du', pt: 'você (singular)' },
+  { yi: 'du', pt: 'você' },
   { yi: 'er', pt: 'ele' },
   { yi: 'zi', pt: 'ela' },
   { yi: 'mir', pt: 'nós' },
   { yi: 'ir', pt: 'vocês' },
   { yi: 'zey', pt: 'eles / elas' },
-  { yi: 'es', pt: 'isso / ele (neutro)' },
+  { yi: 'es', pt: 'isso' },
 ];
 
 export const VERBS: PracticePair[] = [
   { yi: 'zayn', pt: 'ser / estar', hint: 'ikh bin…' },
   { yi: 'hobn', pt: 'ter', hint: 'ikh hob…' },
-  { yi: 'geyn', pt: 'ir / andar', hint: 'ikh gey…' },
+  { yi: 'geyn', pt: 'ir', hint: 'ikh gey…' },
   { yi: 'kumen', pt: 'vir', hint: 'ikh kum…' },
   { yi: 'redn', pt: 'falar', hint: 'ikh red…' },
   { yi: 'esn', pt: 'comer', hint: 'ikh es…' },
   { yi: 'trinken', pt: 'beber', hint: 'ikh trink…' },
   { yi: 'shlofn', pt: 'dormir', hint: 'ikh shlof…' },
-  { yi: 'lernen', pt: 'aprender / estudar', hint: 'ikh lern…' },
+  { yi: 'lernen', pt: 'aprender', hint: 'ikh lern…' },
   { yi: 'helfen', pt: 'ajudar', hint: 'ikh helf…' },
 ];
 
@@ -51,9 +67,9 @@ export const NUMBERS: PracticePair[] = [
   { yi: 'tsen', pt: '10' },
 ];
 
-export type QuizQuestion = {
+export type ArcadeRound = {
   prompt: string;
-  sub?: string;
+  sub: string;
   answer: string;
   choices: string[];
   learn: VocabEntry;
@@ -68,46 +84,38 @@ function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-function pickDistractors(pool: PracticePair[], correct: PracticePair, n: number, field: 'yi' | 'pt'): string[] {
-  const others = shuffle(pool.filter((p) => p !== correct)).slice(0, n);
-  return others.map((p) => p[field]);
+function poolFor(topic: PracticeTopic): PracticePair[] {
+  return topic === 'pronouns' ? PRONOUNS : topic === 'verbs' ? VERBS : NUMBERS;
 }
 
-/** Monta perguntas de múltipla escolha a partir do banco. */
-export function buildQuiz(topic: PracticeTopic, count = 6): QuizQuestion[] {
-  const pool =
-    topic === 'pronouns' ? PRONOUNS : topic === 'verbs' ? VERBS : NUMBERS;
+/** Rodadas arcade conforme o nível. */
+export function buildArcadeRounds(
+  topic: PracticeTopic,
+  level: PracticeLevel,
+): ArcadeRound[] {
+  const cfg = LEVEL_CFG[level];
+  const pool = poolFor(topic);
+  const nChoices = Math.min(cfg.choices, pool.length);
+  const picked = shuffle(pool).slice(0, Math.min(cfg.rounds, pool.length));
 
-  const picked = shuffle(pool).slice(0, Math.min(count, pool.length));
   return picked.map((item, i) => {
-    // Alterna direção: iídiche→PT ou PT→iídiche
     const yiToPt = i % 2 === 0;
-    if (topic === 'numbers') {
-      // Números: sempre "qual palavra?" ou "qual número?"
-      if (yiToPt) {
-        return {
-          prompt: item.yi,
-          sub: 'Qual é o número?',
-          answer: item.pt,
-          choices: shuffle([item.pt, ...pickDistractors(pool, item, 3, 'pt')]),
-          learn: { yiddish: item.yi, portuguese: item.pt },
-        };
-      }
-      return {
-        prompt: item.pt,
-        sub: 'Como se diz em iídiche?',
-        answer: item.yi,
-        choices: shuffle([item.yi, ...pickDistractors(pool, item, 3, 'yi')]),
-        learn: { yiddish: item.yi, portuguese: item.pt },
-      };
-    }
-
     if (yiToPt) {
       return {
         prompt: item.yi,
-        sub: item.hint ? `Ex.: ${item.hint}` : 'O que significa?',
+        sub:
+          topic === 'numbers'
+            ? 'Qual número?'
+            : topic === 'verbs'
+              ? 'O que significa?'
+              : 'Quem é?',
         answer: item.pt,
-        choices: shuffle([item.pt, ...pickDistractors(pool, item, 3, 'pt')]),
+        choices: shuffle([
+          item.pt,
+          ...shuffle(pool.filter((p) => p !== item))
+            .slice(0, nChoices - 1)
+            .map((p) => p.pt),
+        ]),
         learn: { yiddish: item.yi, portuguese: item.pt },
       };
     }
@@ -115,13 +123,13 @@ export function buildQuiz(topic: PracticeTopic, count = 6): QuizQuestion[] {
       prompt: item.pt,
       sub: 'Como se diz em iídiche?',
       answer: item.yi,
-      choices: shuffle([item.yi, ...pickDistractors(pool, item, 3, 'yi')]),
+      choices: shuffle([
+        item.yi,
+        ...shuffle(pool.filter((p) => p !== item))
+          .slice(0, nChoices - 1)
+          .map((p) => p.yi),
+      ]),
       learn: { yiddish: item.yi, portuguese: item.pt },
     };
   });
-}
-
-/** Pares para o jogo da memória (pronomes). */
-export function buildMemoryPairs(pairCount = 4): PracticePair[] {
-  return shuffle(PRONOUNS).slice(0, pairCount);
 }
