@@ -43,8 +43,9 @@ type PresenceHandlers = {
 };
 
 type PeerAudioGraph = {
+  /** Reprodução via <audio> — mais confiável no Chrome desktop (autoplay). */
+  el: HTMLAudioElement;
   source: MediaStreamAudioSourceNode;
-  gain: GainNode;
   analyser: AnalyserNode;
   data: Uint8Array;
 };
@@ -80,6 +81,8 @@ export class LibraryRoom {
   private localMicSource: MediaStreamAudioSourceNode | null = null;
   private localData: Uint8Array | null = null;
   private peerAudio = new Map<string, PeerAudioGraph>();
+  /** Gestos do usuário para retentar play() bloqueado pelo Chrome. */
+  private audioUnlockBound = false;
 
   get selfId(): string {
     return this.selfUserId;
@@ -134,6 +137,47 @@ export class LibraryRoom {
     }
   }
 
+  /**
+   * Destrava áudio no Chrome/Edge (AudioContext + play de peers).
+   * Chamar no clique de "Entrar" / mic — precisa de gesto do usuário.
+   */
+  async unlockAudio(): Promise<void> {
+    const ctx = this.ensureAudioCtx();
+    try {
+      if (ctx.state === 'suspended') await ctx.resume();
+    } catch {
+      /* ignore */
+    }
+    try {
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch {
+      /* ignore */
+    }
+    for (const graph of this.peerAudio.values()) {
+      void graph.el.play().catch(() => undefined);
+    }
+    this.bindAudioUnlockGestures();
+  }
+
+  private bindAudioUnlockGestures(): void {
+    if (this.audioUnlockBound) return;
+    this.audioUnlockBound = true;
+    const retry = () => {
+      void this.unlockAudio();
+    };
+    window.addEventListener('pointerdown', retry, { passive: true });
+    window.addEventListener('keydown', retry, { passive: true });
+    this.unsubs.push(() => {
+      window.removeEventListener('pointerdown', retry);
+      window.removeEventListener('keydown', retry);
+      this.audioUnlockBound = false;
+    });
+  }
+
   async join(
     rawName: string,
     rawCode: string,
@@ -145,6 +189,9 @@ export class LibraryRoom {
     if (code.length < 2) throw new Error('Código inválido (mín. 2 caracteres).');
 
     if (this.room) await this.leave();
+
+    // Chrome: destrava áudio no mesmo gesto do clique em "Entrar".
+    await this.unlockAudio();
 
     this.handlers = handlers;
     this.localName = name;
@@ -652,7 +699,7 @@ export class LibraryRoom {
         track.enabled = true;
       }
       this.micEnabled = true;
-      void this.ensureAudioCtx().resume();
+      await this.unlockAudio();
     } else {
       if (this.micStream) {
         for (const track of this.micStream.getAudioTracks()) {
@@ -693,10 +740,15 @@ export class LibraryRoom {
           const dx = pos.x - localX;
           const dz = pos.z - localZ;
           vol = proximityVolume(Math.hypot(dx, dz));
+        } else {
+          // Ainda sem posição sincronizada — ouve em volume médio
+          vol = 0.75;
         }
       }
 
-      graph.gain.gain.value = vol;
+      // Chrome: volume no <audio>; analyser só para animar o mic
+      graph.el.volume = vol;
+      if (vol > 0.02) void graph.el.play().catch(() => undefined);
       peerLevels.set(userId, vol > 0.02 ? rmsLevel(graph.analyser, graph.data) : 0);
     }
 
@@ -799,19 +851,31 @@ export class LibraryRoom {
 
   private attachPeerAudio(userId: string, stream: MediaStream): void {
     this.detachPeerAudio(userId);
+    void this.unlockAudio();
+
+    // <audio> autoplay — Chrome desktop bloqueia Web Audio sem gesto;
+    // play() no elemento costuma funcionar melhor após unlock.
+    const el = document.createElement('audio');
+    el.autoplay = true;
+    el.setAttribute('playsinline', 'true');
+    (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+    el.srcObject = stream;
+    el.volume = 0;
+    el.style.display = 'none';
+    document.body.appendChild(el);
+    void el.play().catch(() => undefined);
+
     const ctx = this.ensureAudioCtx();
     const source = ctx.createMediaStreamSource(stream);
     const analyser = ctx.createAnalyser();
     analyser.fftSize = 256;
     analyser.smoothingTimeConstant = 0.55;
-    const gain = ctx.createGain();
-    gain.gain.value = 0;
     source.connect(analyser);
-    source.connect(gain);
-    gain.connect(ctx.destination);
+    // Não liga no destination — evita áudio duplicado (só o <audio> toca)
+
     this.peerAudio.set(userId, {
+      el,
       source,
-      gain,
       analyser,
       data: new Uint8Array(analyser.fftSize),
     });
@@ -822,8 +886,14 @@ export class LibraryRoom {
     if (!graph) return;
     try {
       graph.source.disconnect();
-      graph.gain.disconnect();
       graph.analyser.disconnect();
+    } catch {
+      /* ignore */
+    }
+    try {
+      graph.el.pause();
+      graph.el.srcObject = null;
+      graph.el.remove();
     } catch {
       /* ignore */
     }
