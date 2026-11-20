@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import type { NpcId } from '../content/chapterFlow';
 import { GameState } from '../state/GameState';
+import { DynamicGrass, type GrassPlayerState } from './DynamicGrass';
+import { CARTOON, getToonGradient, toonMat } from './cartoonLook';
 
 export interface Collider {
   minX: number;
@@ -59,27 +61,27 @@ type GrazingCow = {
 };
 
 const COLORS = {
-  grass: 0x4a7c3f,
-  grassDark: 0x3f6e36,
-  path: 0xc4b08a,
-  pathDark: 0xa8926c,
-  wall: 0xe8dcc8,
-  wallShade: 0xd4c4a8,
-  roof: 0x8b3a2a,
-  roofDark: 0x6e2e22,
-  wood: 0x6b4a2e,
-  woodLight: 0x8a6340,
-  stone: 0x7a7a72,
-  stoneDark: 0x5a5a58,
-  leaf: 0x2f5d28,
-  leafLight: 0x3f7a38,
-  gold: 0xc9a227,
-  skin: 0xe8c4a0,
-  cream: 0xf0e6d0,
+  grass: CARTOON.grass,
+  grassDark: CARTOON.grassDark,
+  path: CARTOON.path,
+  pathDark: CARTOON.pathDark,
+  wall: CARTOON.wall,
+  wallShade: CARTOON.wallShade,
+  roof: CARTOON.roof,
+  roofDark: CARTOON.roofDark,
+  wood: CARTOON.wood,
+  woodLight: CARTOON.woodLight,
+  stone: CARTOON.stone,
+  stoneDark: CARTOON.stoneDark,
+  leaf: CARTOON.leaf,
+  leafLight: CARTOON.leafLight,
+  gold: CARTOON.gold,
+  skin: CARTOON.skin,
+  cream: CARTOON.cream,
 };
 
-function mat(color: number): THREE.MeshLambertMaterial {
-  return new THREE.MeshLambertMaterial({ color });
+function mat(color: number): THREE.MeshToonMaterial {
+  return toonMat(color);
 }
 
 function box(
@@ -1018,7 +1020,7 @@ function makeCart(x: number, z: number, rotY = 0): THREE.Group {
 }
 
 /** Estrela de Davi (dois triângulos). */
-function makeStarOfDavid(size = 0.9, color = COLORS.gold): THREE.Group {
+function makeStarOfDavid(size = 0.9, color: number = COLORS.gold): THREE.Group {
   const g = new THREE.Group();
   const h = (size * Math.sqrt(3)) / 2;
 
@@ -1078,7 +1080,7 @@ function makeHebrewPlaque(
   const tex = new THREE.CanvasTexture(canvas);
   const plane = new THREE.Mesh(
     new THREE.PlaneGeometry(0.55, 0.45),
-    new THREE.MeshLambertMaterial({ map: tex }),
+    new THREE.MeshToonMaterial({ map: tex, gradientMap: getToonGradient() }),
   );
   plane.position.z = 0.05;
   g.add(plane);
@@ -1110,6 +1112,7 @@ export class ShtetlWorld {
   private shulLight!: THREE.PointLight;
   private shulFill!: THREE.HemisphereLight;
   private readonly cows: GrazingCow[] = [];
+  private grass: DynamicGrass | null = null;
 
   private static readonly SHUL_NPCS = new Set<NpcId>([
     'hazan',
@@ -1125,16 +1128,17 @@ export class ShtetlWorld {
   ]);
 
   constructor() {
-    // Céu âmbar de final de tarde — tom de shtetl
-    this.scene.background = new THREE.Color(0xc9b896);
-    this.scene.fog = new THREE.Fog(0xc9b896, 50, 120);
+    // Céu cartoon — azul vivo, névoa clara
+    this.scene.background = new THREE.Color(CARTOON.sky);
+    this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
 
-    this.outdoorHemi = new THREE.HemisphereLight(0xfff0d6, 0x5a4a32, 0.95);
+    this.outdoorHemi = new THREE.HemisphereLight(0xfff8e8, 0x8fd46a, 1.35);
     this.scene.add(this.outdoorHemi);
-    this.outdoorSun = new THREE.DirectionalLight(0xffe0a8, 1.05);
-    this.outdoorSun.position.set(28, 40, 16);
+    this.outdoorSun = new THREE.DirectionalLight(0xfff5d8, 1.1);
+    this.outdoorSun.position.set(24, 45, 18);
     this.outdoorSun.castShadow = true;
-    this.outdoorSun.shadow.mapSize.set(2048, 2048);
+    this.outdoorSun.shadow.mapSize.set(1024, 1024);
+    this.outdoorSun.shadow.radius = 3;
     this.outdoorSun.shadow.camera.near = 1;
     this.outdoorSun.shadow.camera.far = 140;
     this.outdoorSun.shadow.camera.left = -70;
@@ -1213,9 +1217,10 @@ export class ShtetlWorld {
   }
 
   private buildGround(): void {
+    this.grass = new DynamicGrass(this.scene);
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(140, 140),
-      mat(COLORS.grass),
+      this.grass.groundMat,
     );
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -1552,11 +1557,11 @@ export class ShtetlWorld {
     this.shulFill.visible = inside;
 
     if (inside) {
-      this.scene.background = new THREE.Color(0x3d3428);
-      this.scene.fog = new THREE.Fog(0x3d3428, 12, 28);
+      this.scene.background = new THREE.Color(CARTOON.shulBg);
+      this.scene.fog = new THREE.Fog(CARTOON.shulBg, 12, 28);
     } else {
-      this.scene.background = new THREE.Color(0xc9b896);
-      this.scene.fog = new THREE.Fog(0xc9b896, 50, 120);
+      this.scene.background = new THREE.Color(CARTOON.sky);
+      this.scene.fog = new THREE.Fog(CARTOON.fog, 55, 135);
     }
 
     for (const npc of this.npcs) {
@@ -2479,6 +2484,11 @@ export class ShtetlWorld {
   }
 
   private static readonly NPC_SOLID_R = 0.72;
+
+  /** Vento / interação da grama — chamar todo frame. */
+  updateGrass(dt: number, player?: GrassPlayerState): void {
+    this.grass?.update(dt, player);
+  }
 
   /** Atualiza patrulha e animação dos moradores ambulantes. */
   updateVillagers(

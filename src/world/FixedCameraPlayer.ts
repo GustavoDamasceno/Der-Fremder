@@ -14,9 +14,14 @@ export class FixedCameraPlayer {
   facing = Math.PI;
   /** True neste frame se andou. */
   moving = false;
+  /** Shift / LB+RB — corrida. */
+  sprinting = false;
+  /** Velocidade horizontal deste frame (unidades/s). */
+  readonly velocity = new THREE.Vector3();
 
   private readonly keys = new Set<string>();
   private readonly speed = 7;
+  private readonly sprintMul = 1.45;
   /** Offset da câmera no shtetl (mundo aberto). */
   private readonly camOffsetOutdoor = new THREE.Vector3(0, 14, 16);
   /** Offset da câmera na sinagoga (sala fechada — mais baixa e perto). */
@@ -86,6 +91,8 @@ export class FixedCameraPlayer {
 
   update(dt: number, world: ShtetlWorld, canMove: boolean): void {
     this.moving = false;
+    this.sprinting = false;
+    this.velocity.set(0, 0, 0);
 
     if (canMove) {
       let ix = 0;
@@ -105,6 +112,12 @@ export class FixedCameraPlayer {
         ix += t.x;
         iz += t.z;
       }
+
+      this.sprinting =
+        this.keys.has('ShiftLeft') ||
+        this.keys.has('ShiftRight') ||
+        !!this.gamepad?.isDown(4) ||
+        !!this.gamepad?.isDown(5);
 
       if (ix * ix + iz * iz > 0) {
         // Movimento relativo à câmera: W / stick ↑ = para dentro da tela
@@ -127,7 +140,10 @@ export class FixedCameraPlayer {
           this.facing = Math.atan2(move.x, move.z);
           this.moving = true;
 
-          const delta = move.multiplyScalar(this.speed * dt);
+          const spd = this.speed * (this.sprinting ? this.sprintMul : 1);
+          this.velocity.copy(move).multiplyScalar(spd);
+
+          const delta = move.multiplyScalar(spd * dt);
           const steps = 3;
           const step = delta.clone().multiplyScalar(1 / steps);
           for (let i = 0; i < steps; i++) {

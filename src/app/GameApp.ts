@@ -41,6 +41,10 @@ export class GameApp {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.35;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
 
     this.world = new ShtetlWorld();
     this.player = new FixedCameraPlayer(canvas);
@@ -216,6 +220,14 @@ export class GameApp {
       this.playing && this.ui.currentMode === 'playing';
 
     this.player.update(dt, this.world, canMove);
+    this.world.updateGrass(dt, {
+      x: this.player.position.x,
+      z: this.player.position.z,
+      vx: this.player.velocity.x,
+      vz: this.player.velocity.z,
+      moving: this.player.moving,
+      sprinting: this.player.sprinting,
+    });
 
     this.world.updateVillagers(dt, !canMove, {
       x: this.player.position.x,
