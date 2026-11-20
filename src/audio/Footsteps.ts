@@ -1,11 +1,12 @@
 /**
- * Passos procedurais (Web Audio) — som padrão de terra/caminho, sem arquivo externo.
+ * Passos procedurais (Web Audio) — a pé ou a cavalo, sem arquivo externo.
  */
 import { SoundManager } from './SoundManager';
 
 export class Footsteps {
   private ctx: AudioContext | null = null;
   private lastFoot = -1;
+  private lastHoof = -1;
   private unlocked = false;
 
   /** Precisa de gesto do usuário no browser (Enter / tecla). */
@@ -38,17 +39,58 @@ export class Footsteps {
     const foot = Math.floor(phase / Math.PI);
     if (foot === this.lastFoot) return;
     this.lastFoot = foot;
-    this.play();
+    this.playFoot();
   }
 
-  private play(): void {
+  /**
+   * Cascos do cavalo — mesma cadência/volume dos passos a pé.
+   * `phase` vem do ciclo de animação das patas.
+   */
+  updateHorse(phase: number, riding: boolean): void {
+    if (!riding) {
+      this.lastHoof = -1;
+      return;
+    }
+    if (!this.unlocked) return;
+    if (!SoundManager.get().isEnabled) return;
+
+    const hoof = Math.floor(phase / Math.PI);
+    if (hoof === this.lastHoof) return;
+    this.lastHoof = hoof;
+    this.playHoof();
+  }
+
+  private playFoot(): void {
+    this.playThud({
+      dur: 0.09,
+      freq: 280 + Math.random() * 120,
+      q: 0.85,
+      vol: 0.42 + Math.random() * 0.1,
+    });
+  }
+
+  private playHoof(): void {
+    // Casco na terra — um pouco mais grave, mesmo volume médio (~0.42)
+    this.playThud({
+      dur: 0.11,
+      freq: 160 + Math.random() * 80,
+      q: 0.7,
+      vol: 0.42 + Math.random() * 0.1,
+    });
+  }
+
+  private playThud(opts: {
+    dur: number;
+    freq: number;
+    q: number;
+    vol: number;
+  }): void {
     const ctx = this.ensureCtx();
     if (ctx.state === 'suspended') void ctx.resume();
 
     const t = ctx.currentTime;
-    const dur = 0.09;
+    const { dur, freq, q, vol } = opts;
 
-    // Ruído curto (pé na terra)
     const samples = Math.floor(ctx.sampleRate * dur);
     const buffer = ctx.createBuffer(1, samples, ctx.sampleRate);
     const data = buffer.getChannelData(0);
@@ -62,11 +104,10 @@ export class Footsteps {
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.value = 280 + Math.random() * 120;
-    filter.Q.value = 0.85;
+    filter.frequency.value = freq;
+    filter.Q.value = q;
 
     const gain = ctx.createGain();
-    const vol = 0.42 + Math.random() * 0.1;
     gain.gain.setValueAtTime(vol, t);
     gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
 

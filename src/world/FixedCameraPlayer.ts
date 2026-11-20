@@ -18,12 +18,17 @@ export class FixedCameraPlayer {
   sprinting = false;
   /** Velocidade horizontal deste frame (unidades/s). */
   readonly velocity = new THREE.Vector3();
+  /** Montado a cavalo. */
+  mounted = false;
 
   private readonly keys = new Set<string>();
   private readonly speed = 7;
   private readonly sprintMul = 1.45;
+  private readonly mountSpeed = 13;
+  private readonly mountSprintMul = 1.4;
   /** Offset da câmera no shtetl (mundo aberto). */
   private readonly camOffsetOutdoor = new THREE.Vector3(0, 14, 16);
+  private readonly camOffsetMounted = new THREE.Vector3(0, 16, 18);
   /** Offset da câmera na sinagoga (sala fechada — mais baixa e perto). */
   private readonly camOffsetIndoor = new THREE.Vector3(-3.2, 4.2, 3.8);
   /** Limites para a câmera não atravessar as paredes (escola / sinagoga). */
@@ -66,8 +71,16 @@ export class FixedCameraPlayer {
     this.camera.lookAt(this.position.x, 1.2, this.position.z);
   }
 
+  setMounted(mounted: boolean): void {
+    this.mounted = mounted;
+  }
+
   private desiredCamPos(): THREE.Vector3 {
-    const offset = this.indoor ? this.camOffsetIndoor : this.camOffsetOutdoor;
+    const offset = this.indoor
+      ? this.camOffsetIndoor
+      : this.mounted
+        ? this.camOffsetMounted
+        : this.camOffsetOutdoor;
     return this.position.clone().add(offset);
   }
 
@@ -140,17 +153,24 @@ export class FixedCameraPlayer {
           this.facing = Math.atan2(move.x, move.z);
           this.moving = true;
 
-          const spd = this.speed * (this.sprinting ? this.sprintMul : 1);
+          const base = this.mounted ? this.mountSpeed : this.speed;
+          const mul = this.sprinting
+            ? this.mounted
+              ? this.mountSprintMul
+              : this.sprintMul
+            : 1;
+          const spd = base * mul;
           this.velocity.copy(move).multiplyScalar(spd);
 
           const delta = move.multiplyScalar(spd * dt);
-          const steps = 3;
+          const steps = this.mounted ? 4 : 3;
+          const radius = this.mounted ? 0.75 : 0.5;
           const step = delta.clone().multiplyScalar(1 / steps);
           for (let i = 0; i < steps; i++) {
             const nx = this.position.x + step.x;
             const nz = this.position.z + step.z;
-            if (!world.collides(nx, this.position.z, 0.5)) this.position.x = nx;
-            if (!world.collides(this.position.x, nz, 0.5)) this.position.z = nz;
+            if (!world.collides(nx, this.position.z, radius)) this.position.x = nx;
+            if (!world.collides(this.position.x, nz, radius)) this.position.z = nz;
           }
         }
       }
@@ -160,7 +180,7 @@ export class FixedCameraPlayer {
     this.camera.position.lerp(desired, Math.min(1, dt * 8));
     this.camera.lookAt(
       this.position.x,
-      1.2,
+      this.mounted ? 1.6 : 1.2,
       this.position.z,
     );
   }

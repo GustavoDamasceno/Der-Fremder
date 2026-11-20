@@ -80,9 +80,11 @@ export class GameApp {
     SoundManager.get().unlock();
     SoundManager.get().setTrack('shtetl');
     GameState.reset();
+    if (this.world.isMounted()) this.dismount();
     this.world.refreshChapterVisibility();
     this.player.setPosition(this.world.spawnPlayerDefault());
     this.player.facing = Math.PI;
+    this.player.setIndoor(false);
     this.playing = true;
     this.ui.showBanner(1);
   }
@@ -134,8 +136,27 @@ export class GameApp {
 
   private tryInteract(): void {
     if (this.ui.currentMode !== 'playing') return;
+
+    // Montado: E sempre desce (não entra em prédios a cavalo)
+    if (this.world.isMounted()) {
+      this.dismount();
+      return;
+    }
+
     const target = this.world.nearestInteractable(this.player.position);
     if (!target) return;
+
+    if (target.id === 'horse') {
+      if (this.world.mountHorse()) {
+        this.player.setMounted(true);
+        this.player.setPosition(
+          new THREE.Vector3(target.position.x, 0, target.position.z),
+        );
+        this.player.snapCamera();
+        this.ui.setHint('[ E ] Descer do cavalo · Shift galopar');
+      }
+      return;
+    }
 
     if (target.id === 'inn') {
       if (!GameState.flags.lodgingGranted) {
@@ -196,8 +217,22 @@ export class GameApp {
     this.ui.startDialogue(tree, target.id);
   }
 
+  private dismount(): void {
+    const pos = this.world.dismountHorse();
+    this.player.setMounted(false);
+    if (pos) this.player.setPosition(pos);
+    this.playerRig.root.position.y = 0;
+    this.player.snapCamera();
+    this.ui.setHint(chapterObjectiveHint());
+  }
+
   private updateHints(): void {
     if (this.ui.currentMode !== 'playing') return;
+
+    if (this.world.isMounted()) {
+      this.ui.setHint('[ E ] Descer do cavalo · WASD andar · Shift galopar');
+      return;
+    }
 
     const target = this.world.nearestInteractable(this.player.position);
     if (target) {
@@ -221,6 +256,8 @@ export class GameApp {
         } else {
           this.ui.setHint('[ E ] Entrar na escola');
         }
+      } else if (target.id === 'horse') {
+        this.ui.setHint('[ E ] Montar no cavalo');
       } else if (target.id === 'photo') {
         this.ui.setHint('[ E ] Examinar o objeto');
       } else {
@@ -258,13 +295,38 @@ export class GameApp {
       z: this.player.position.z,
     });
 
-    const moving = canMove && this.player.moving;
+    const mounted = this.world.isMounted();
+    this.world.updateRide(dt, {
+      x: this.player.position.x,
+      z: this.player.position.z,
+      facing: this.player.facing,
+      moving: canMove && this.player.moving,
+    });
+
+    const moving = canMove && this.player.moving && !mounted;
     this.playerRig.root.position.x = this.player.position.x;
     this.playerRig.root.position.z = this.player.position.z;
     this.playerRig.root.rotation.y = this.player.facing;
 
-    applyWalkCycle(this.playerRig, moving, dt, this.walkPhase);
-    this.footsteps.update(this.walkPhase.value, moving);
+    if (mounted) {
+      // Pose sentada na sela
+      this.playerRig.root.position.y = 1.15;
+      this.playerRig.legL.rotation.x = -0.95;
+      this.playerRig.legR.rotation.x = -0.95;
+      this.playerRig.armL.rotation.x = -0.4;
+      this.playerRig.armR.rotation.x = -0.4;
+      this.playerRig.armL.rotation.z = 0.25;
+      this.playerRig.armR.rotation.z = -0.25;
+      this.footsteps.update(this.walkPhase.value, false);
+      this.footsteps.updateHorse(
+        this.world.getRidePhase(),
+        canMove && this.player.moving,
+      );
+    } else {
+      applyWalkCycle(this.playerRig, moving, dt, this.walkPhase);
+      this.footsteps.update(this.walkPhase.value, moving);
+      this.footsteps.updateHorse(0, false);
+    }
 
     const eDown =
       this.player.justPressed('KeyE') ||

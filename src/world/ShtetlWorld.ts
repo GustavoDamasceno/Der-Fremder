@@ -60,6 +60,15 @@ type GrazingCow = {
   radius: number;
 };
 
+/** Cavalo que o jogador pode montar. */
+export type RideableHorse = {
+  mesh: THREE.Group;
+  legs: THREE.Object3D[];
+  mounted: boolean;
+  phase: number;
+  radius: number;
+};
+
 const COLORS = {
   grass: CARTOON.grass,
   grassDark: CARTOON.grassDark,
@@ -1154,6 +1163,9 @@ export class ShtetlWorld {
   private grass: DynamicGrass | null = null;
   /** Fachada da escola (mundo aberto) — para spawn ao sair. */
   private schoolDoorPos = new THREE.Vector3(-36, 0, -1.5);
+  /** Cavalo montável do celeiro. */
+  private rideable: RideableHorse | null = null;
+  private rideableInteractable: Interactable | null = null;
 
   private static readonly SHUL_NPCS = new Set<NpcId>([
     'hazan',
@@ -2284,11 +2296,13 @@ export class ShtetlWorld {
       [pcx - 1, pcz + 1, 2.4, 0x4a3828],
       [pcx + 6, pcz - 4.5, -1.5, 0x9a7a58],
       [pcx - 8, pcz + 0.5, 0.8, 0x3a2a1a],
-      [pcx + 4, pcz + 2.5, -0.3, 0x6a4830],
     ];
     for (const [hx, hz, rot, col] of horses) {
       this.addHorse(hx, hz, rot, col);
     }
+
+    // Cavalo montável — fora do cerco, perto da porta do celeiro
+    this.spawnRideableHorse(x - 2.5, doorZ + 2.8, Math.PI * 0.15, 0x6a4830);
 
     // Bebedouros e feno dentro do cerco
     this.scene.add(box(1.4, 0.5, 0.7, COLORS.wood, pcx - 6, 0.28, pcz + 5));
@@ -2352,9 +2366,11 @@ export class ShtetlWorld {
     }
   }
 
-  private addHorse(x: number, z: number, rotY: number, color: number): void {
+  private makeHorseMesh(
+    color: number,
+    opts?: { saddle?: boolean },
+  ): { root: THREE.Group; legs: THREE.Object3D[] } {
     const g = new THREE.Group();
-    // Corpo
     const body = new THREE.Mesh(
       new THREE.CapsuleGeometry(0.35, 0.9, 4, 8),
       mat(color),
@@ -2363,35 +2379,136 @@ export class ShtetlWorld {
     body.position.set(0, 0.95, 0);
     body.castShadow = true;
     g.add(body);
-    // Pescoço
     const neck = box(0.28, 0.55, 0.28, color, 0.55, 1.25, 0);
     neck.rotation.z = -0.5;
     g.add(neck);
-    // Cabeça
     g.add(box(0.45, 0.28, 0.25, color, 0.95, 1.45, 0));
-    g.add(box(0.12, 0.1, 0.08, 0x1a1410, 1.15, 1.5, 0.08)); // olho
+    g.add(box(0.12, 0.1, 0.08, 0x1a1410, 1.15, 1.5, 0.08));
     g.add(box(0.12, 0.1, 0.08, 0x1a1410, 1.15, 1.5, -0.08));
-    // Crina
     g.add(box(0.12, 0.4, 0.08, 0x1a1410, 0.5, 1.45, 0));
-    // Orelhas
     g.add(box(0.08, 0.18, 0.06, color, 0.85, 1.65, 0.1));
     g.add(box(0.08, 0.18, 0.06, color, 0.85, 1.65, -0.1));
-    // Pernas
+
+    const legs: THREE.Object3D[] = [];
     for (const [lx, lz] of [
       [-0.35, 0.2],
       [-0.35, -0.2],
       [0.35, 0.2],
       [0.35, -0.2],
     ] as [number, number][]) {
-      g.add(cyl(0.07, 0.08, 0.75, color, lx, 0.4, lz, 6));
-      g.add(box(0.12, 0.08, 0.18, 0x1a1410, lx, 0.05, lz));
+      const leg = new THREE.Group();
+      leg.position.set(lx, 0.75, lz);
+      const shaft = cyl(0.07, 0.08, 0.75, color, 0, -0.35, 0, 6);
+      leg.add(shaft);
+      leg.add(box(0.12, 0.08, 0.18, 0x1a1410, 0, -0.7, 0));
+      g.add(leg);
+      legs.push(leg);
     }
-    // Cauda
     g.add(box(0.08, 0.5, 0.08, 0x1a1410, -0.7, 1.0, 0));
-    g.position.set(x, 0, z);
-    g.rotation.y = rotY;
-    this.scene.add(g);
+
+    if (opts?.saddle) {
+      g.add(box(0.55, 0.14, 0.5, 0x5a3020, 0.05, 1.22, 0));
+      g.add(box(0.5, 0.08, 0.12, 0xc9a227, 0.05, 1.3, 0));
+      g.add(box(0.08, 0.35, 0.08, 0x3a2418, 0.05, 1.05, 0.32));
+      g.add(box(0.08, 0.35, 0.08, 0x3a2418, 0.05, 1.05, -0.32));
+      // Rédeas
+      g.add(box(0.04, 0.04, 0.55, 0x2a1a10, 0.55, 1.35, 0));
+    }
+    return { root: g, legs };
+  }
+
+  private addHorse(x: number, z: number, rotY: number, color: number): void {
+    const { root } = this.makeHorseMesh(color);
+    root.position.set(x, 0, z);
+    root.rotation.y = rotY;
+    this.scene.add(root);
     this.addCircle(x, z, 0.85);
+  }
+
+  private spawnRideableHorse(
+    x: number,
+    z: number,
+    rotY: number,
+    color: number,
+  ): void {
+    const { root, legs } = this.makeHorseMesh(color, { saddle: true });
+    root.position.set(x, 0, z);
+    root.rotation.y = rotY;
+    this.scene.add(root);
+    this.rideable = {
+      mesh: root,
+      legs,
+      mounted: false,
+      phase: 0,
+      radius: 0.9,
+    };
+    this.rideableInteractable = {
+      id: 'horse',
+      name: 'Cavalo (sela)',
+      position: root.position,
+      radius: 2.4,
+    };
+    this.interactables.push(this.rideableInteractable);
+  }
+
+  isMounted(): boolean {
+    return !!this.rideable?.mounted;
+  }
+
+  /** Fase do galope/passo — para som dos cascos. */
+  getRidePhase(): number {
+    return this.rideable?.phase ?? 0;
+  }
+
+  mountHorse(): boolean {
+    if (!this.rideable || this.rideable.mounted) return false;
+    if (this.inShul || this.inSchool) return false;
+    this.rideable.mounted = true;
+    return true;
+  }
+
+  /** Desce do cavalo ao lado. Retorna a posição do jogador no chão. */
+  dismountHorse(): THREE.Vector3 | null {
+    if (!this.rideable?.mounted) return null;
+    const h = this.rideable.mesh;
+    this.rideable.mounted = false;
+    for (const leg of this.rideable.legs) {
+      leg.rotation.x = 0;
+      leg.rotation.z = 0;
+    }
+    this.rideable.mesh.position.y = 0;
+    // Jogador ao lado do cavalo
+    const side = new THREE.Vector3(-Math.sin(h.rotation.y), 0, -Math.cos(h.rotation.y));
+    return new THREE.Vector3(
+      h.position.x + side.x * 1.4,
+      0,
+      h.position.z + side.z * 1.4,
+    );
+  }
+
+  /** Mantém cavalo + sela sincronizados com o jogador enquanto montado. */
+  updateRide(dt: number, player: { x: number; z: number; facing: number; moving: boolean }): void {
+    const h = this.rideable;
+    if (!h?.mounted) return;
+    h.mesh.position.x = player.x;
+    h.mesh.position.z = player.z;
+    // Modelo do cavalo olha para +X local
+    h.mesh.rotation.y = player.facing - Math.PI / 2;
+
+    if (player.moving) {
+      h.phase += dt * 14;
+      // Cavalo olha +X → balanço frente/trás = rotation.z (não .x)
+      const swing = Math.sin(h.phase) * 0.55;
+      h.legs[0]!.rotation.z = swing; // traseira L
+      h.legs[1]!.rotation.z = -swing; // traseira R
+      h.legs[2]!.rotation.z = -swing; // dianteira L
+      h.legs[3]!.rotation.z = swing; // dianteira R
+      h.mesh.position.y = Math.abs(Math.sin(h.phase * 2)) * 0.06;
+    } else {
+      h.phase *= 0.9;
+      for (const leg of h.legs) leg.rotation.z *= 0.7;
+      h.mesh.position.y *= 0.8;
+    }
   }
 
   private makeCow(color: number): {
@@ -3290,11 +3407,18 @@ export class ShtetlWorld {
       if (dx * dx + dz * dz < minDist * minDist) return true;
     }
 
-    if (!this.inShul) {
+    if (!this.inShul && !this.inSchool) {
       for (const cow of this.cows) {
         const dx = x - cow.mesh.position.x;
         const dz = z - cow.mesh.position.z;
         const minDist = radius + cow.radius;
+        if (dx * dx + dz * dz < minDist * minDist) return true;
+      }
+      // Cavalo parado (quando montado, não colide consigo mesmo)
+      if (this.rideable && !this.rideable.mounted) {
+        const dx = x - this.rideable.mesh.position.x;
+        const dz = z - this.rideable.mesh.position.z;
+        const minDist = radius + this.rideable.radius;
         if (dx * dx + dz * dz < minDist * minDist) return true;
       }
     }
